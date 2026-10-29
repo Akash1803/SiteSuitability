@@ -17,9 +17,13 @@ Pick a site boundary, press **Run**, get the full preliminary site analysis:
 | 11 | Soil + land quality slide | A-register settlement fields (soil class / sort / tharam, assessment Rs/ha, irrigation source) | `Soil_Land_Quality` sheet, soil map + slide |
 | 12 | Sensitive land slide | A-register remarks (water body, channel, temple, burial, village site, forest, NH land, well) + govt poramboke | sensitive-land map + slide |
 | 13 | Government land classification slide | A-register remarks (odai, railway, pathway, tank ...) or land type + poramboke code; names from `Poramboke_Codes.xlsx` in the templates folder | `Govt_Land_Classification` sheet, map + MIS slide after ownership |
-| 14 | Slides + PPT | deck template | `07_PPT_Maps/*.png`, `08_Output/*_Preliminary_Site_Analysis_PPT.pptx` |
+| 14 | GLV map slide | GLV as quoted, banded per acre / per sq ft | map + band table after the GLV summary |
+| 15 | Patta holdings slide | A-register patta number + owners | `Patta_Holdings` sheet, holding-size map, largest pattas |
+| 16 | Executive summary slide | every finished stage | one KPI slide after the title |
+| 17 | Slides + PPT | deck template | `07_PPT_Maps/*.png`, `08_Output/*_Preliminary_Site_Analysis_PPT.pptx` |
 
 The PDF is made only after the PPT is confirmed (button in the app / `cli pdf`).
+Land Summary is now a village-wise Land Abstract, Ownership splits patta Dry / Wet, Crop lists the area per crop.
 Untick a stage and its slides leave the PPT; changing ticks after a run rebuilds only what depends on them.
 
 ## Rules built in

@@ -128,6 +128,31 @@ def slide_data(site, summ):
                 "per_acre_act_lakh": c["act_per_acre"] / 1e5, "per_acre_neg_lakh": c["neg_per_acre"] / 1e5}
     crop = summ.get("crop") or {"crop_acre": 0.0, "no_survey_acre": A, "noncrop_acre": 0.0}
     vil = s.groupby("village").site_acre.sum()
+    # land abstract: village x (government / patta) x land type
+    lt = s.land_type_english.fillna("Other")
+    gtypes = [t for t in ("Dry", "Wet", "Poramboke", "Tharisu") if ((s.ownership == "Govt") & (lt == t)).any()] + sorted(set(lt[s.ownership == "Govt"]) - {"Dry", "Wet", "Poramboke", "Tharisu"})
+    ptypes = [t for t in ("Dry", "Wet") if ((s.ownership == "Patta") & (lt == t)).any()] + sorted(set(lt[s.ownership == "Patta"]) - {"Dry", "Wet"})
+    def _ab(x, name):
+        return {"village": name, "govt": {t: float(x[(x.ownership == "Govt") & (x.land_type_english.fillna("Other") == t)].site_acre.sum()) for t in gtypes},
+                "patta": {t: float(x[(x.ownership == "Patta") & (x.land_type_english.fillna("Other") == t)].site_acre.sum()) for t in ptypes}}
+    abstract = {"govt_types": gtypes, "patta_types": ptypes, "rows": [_ab(x, v) for v, x in s.groupby("village")], "total": _ab(s, "Grand Total")}
+    oc = []
+    for t, c in (("Dry", "#f5c242"), ("Wet", "#4a8df0")):
+        v = float(s[(s.ownership == "Patta") & (lt == t)].site_acre.sum())
+        if v > 0:
+            oc.append((f"Patta - {t}", v, c))
+    other = float(s[(s.ownership == "Patta") & ~lt.isin(["Dry", "Wet"])].site_acre.sum())
+    if other > 0:
+        oc.append(("Patta - Other", other, "#ff9800"))
+    oc.append(("Government", float(gov), "#2ecc71"))
+    crops = []
+    try:
+        cg = pd.read_excel(site.master, sheet_name="Crops_Grown")
+        if len(cg):
+            eff = cg.groupby("crop_name").agg(acre=("crop_area_ac", "max"), seasons=("season", lambda x: ", ".join(sorted(set(x))))).sort_values("acre", ascending=False)
+            crops = [{"crop": k, "acre": float(r.acre), "seasons": r.seasons} for k, r in eff.iterrows()]
+    except ValueError:
+        pass
     return {"total": A, "own": {"Government Land": row(gov), "Patta Land": row(pat)},
             "lclass": {names.get(k, k): row(v) for k, v in s.groupby("land_type_english").site_acre.sum().sort_values(ascending=False).items()},
             "rem": {k: {"total": round(float(v), 2), "pct": round(float(v) / gov * 100, 2) if gov else 0} for k, v in rem.items()},
@@ -135,7 +160,8 @@ def slide_data(site, summ):
             "glv_unit": {"acres": {"range": ac_r, "area": ac_a}, "sqft": {"range": sq_r, "area": sq_a}, "nodata": {"range": "–", "area": max(nod, 0.0)}, "total": float(pat)},
             "c1": cond("C1"), "c2": cond("C2"), "villages": {k: {"acre": float(v), "pct": float(v / A * 100)} for k, v in vil.items()},
             "crop": {"crop": crop["crop_acre"], "nosurvey": crop["no_survey_acre"], "noncrop": crop["noncrop_acre"]},
-            "village_colors": summ.get("village_colors", {}), "split_surveys": summ.get("split_surveys", 0)}
+            "village_colors": summ.get("village_colors", {}), "split_surveys": summ.get("split_surveys", 0),
+            "abstract": abstract, "own_classes": oc, "crops": crops if summ.get("crop") else []}
 
 
 def compose_streetview(raw, out, AC, pins, info):
@@ -211,7 +237,8 @@ def build_ppt(site, img, AC, summ, keep, pins=None, hot=None):
     extra = 0
     last_after = {}
     # new slides: government land after ownership (template 9); soil and sensitive land after crop (template 10)
-    for k_, name, anchor in (("govtland", "s09b_govt", 9), ("soil", "s11_soil", 10), ("sensitive", "s12_sensitive", 10)):
+    for k_, name, anchor in (("summary", "s01b_summary", 1), ("glvmap", "s07b_glvmap", 7), ("govtland", "s09b_govt", 9), ("owners", "s09c_owners", 9),
+                             ("soil", "s11_soil", 10), ("sensitive", "s12_sensitive", 10)):
         if k_ not in keep:
             continue
         ns = prs.slides.add_slide(slides[9].slide_layout)
@@ -271,7 +298,7 @@ def build_ppt(site, img, AC, summ, keep, pins=None, hot=None):
     return len(prs.slides._sldIdLst)
 
 
-OPTIONAL = ("maps", "landcost", "crop", "streetview", "soil", "sensitive", "govtland")
+OPTIONAL = ("maps", "landcost", "crop", "streetview", "soil", "sensitive", "govtland", "glvmap", "owners", "summary")
 
 
 def _included(site, ctx):
@@ -282,6 +309,34 @@ def _included(site, ctx):
 def stale(site, ctx):
     """re-build the PPT when the ticked optional stages differ from the last build (e.g. crop unticked -> no crop slide)"""
     return db.get_summary(site.site_id).get("ppt_included") != _included(site, ctx) or not site.ppt.exists()
+
+
+def exec_data(summ, data, on):
+    A = data["total"]; m = summ.get("master", {}); vs = summ.get("villages", [])
+    cards = [{"k": "Site area (A-register)", "v": f"{A:,.2f} <small>acres</small>", "s": f"{summ.get('surveys', 0)} surveys · {m.get('subdivisions', 0)} subdivisions · {len(vs)} villages"},
+             {"k": "Patta / Government", "v": f"{data['patta_total'] / A * 100:.1f}% <small>patta</small>", "s": f"Patta {data['patta_total']:,.2f} ac · Govt {data['gov_total']:,.2f} ac"},
+             {"k": "Location", "v": ", ".join(dict.fromkeys(v["district"] for v in vs)), "s": "Taluk: " + ", ".join(dict.fromkeys(v["taluk"] for v in vs))}]
+    lc = summ.get("landcost", {}).get("C1") if on("landcost") else None
+    if lc:
+        c2 = summ["landcost"]["C2"]
+        cards.append({"k": "Estimated cost per acre", "v": f"{lc['act_per_acre'] / 1e5:.2f} <small>lakh (Act, C1)</small>", "cls": "o",
+                      "s": f"Negotiation {lc['neg_per_acre'] / 1e5:.2f} L · C2: {c2['act_per_acre'] / 1e5:.2f} / {c2['neg_per_acre'] / 1e5:.2f} L"})
+    cr = summ.get("crop") if on("crop") else None
+    if cr:
+        cards.append({"k": "Crop land", "v": f"{cr['crop_acre'] / A * 100:.1f}% <small>of site</small>", "cls": "g",
+                      "s": f"Crop {cr['crop_acre']:,.2f} ac · non-crop {cr['noncrop_acre']:,.2f} · no survey {cr['no_survey_acre']:,.2f}"})
+    if m.get("glv_crore") and on("glv"):
+        cards.append({"k": "Guideline value (indicative)", "v": f"Rs {m['glv_crore']:,.1f} <small>crore</small>", "s": "TNReginet rates as quoted (acre / sq ft)"})
+    se = summ.get("sensitive") if on("sensitive") else None
+    if se:
+        cards.append({"k": "Sensitive land inside", "v": f"{se['sensitive_acre']:,.2f} <small>acres</small>", "cls": "o",
+                      "s": ", ".join(f"{r['category']} {r['acre']:.1f}" for r in se["rows"][:3])})
+    ow = summ.get("owners") if on("owners") else None
+    if ow:
+        cards.append({"k": "Patta holdings", "v": f"{ow['pattas']} <small>pattas</small>", "s": f"{ow['companies']} held by companies · {ow['owner_entries']} owner entries"})
+    cn = summ.get("connectivity", {})
+    notes = (cn.get("lines") or [])[:4] + ([cn["sipcot_park"]] if cn.get("sipcot_park") else [])
+    return {"cards": cards[:8], "notes": notes if on("maps") else []}
 
 
 ZERO_COST = {x: 0.0 for x in ("gov_acre", "pat_acre", "act_gov", "neg_gov", "act_pat", "neg_pat", "act_total", "neg_total", "act_per_acre", "neg_per_acre")}
@@ -302,8 +357,12 @@ def run(site, ctx):
     has_soil = has_maps and on("soil") and "soil" in summ and (raw / "map_soil.png").exists()
     has_sens = has_maps and on("sensitive") and "sensitive" in summ and (raw / "map_sensitive.png").exists()
     has_govt = has_maps and on("govtland") and "govtland" in summ and (raw / "map_govt.png").exists()
+    has_glvmap = has_maps and on("glvmap") and "glvmap" in summ and (raw / "map_glv.png").exists()
+    has_owners = has_maps and on("owners") and "owners" in summ and (raw / "map_holding.png").exists()
+    has_summary = on("summary")
     keep = {"land"} | ({"location", "boundary", "road", "village", "ownership"} if has_maps else set()) | ({"glv"} if has_cost else set()) \
-        | ({"crop"} if has_crop and has_maps else set()) | ({"streetview"} if has_sv else set())         | ({"soil"} if has_soil else set()) | ({"sensitive"} if has_sens else set()) | ({"govtland"} if has_govt else set())
+        | ({"crop"} if has_crop and has_maps else set()) | ({"streetview"} if has_sv else set())         | ({"soil"} if has_soil else set()) | ({"sensitive"} if has_sens else set()) | ({"govtland"} if has_govt else set()) \
+        | ({"glvmap"} if has_glvmap else set()) | ({"owners"} if has_owners else set()) | ({"summary"} if has_summary else set())
     if not has_cost:
         summ = {**summ, "landcost": {k: {**ZERO_COST, "total_acre": 1.0} for k in ("C1", "C2")}}
     if not has_crop:
@@ -318,9 +377,15 @@ def run(site, ctx):
         data["sensitive"] = summ["sensitive"]
     if has_govt:
         data["govtland"] = summ["govtland"]
+    if has_glvmap:
+        data["glvmap"] = summ["glvmap"]
+    if has_owners:
+        data["owners"] = summ["owners"]
+    if has_summary:
+        data["exec"] = exec_data(summ, data, on)
     pins = hot = None
     if has_maps:
-        for f in ("map_village.png", "map_owner.png", "map_crop.png", "map_soil.png", "map_sensitive.png", "map_govt.png"):
+        for f in ("map_village.png", "map_owner.png", "map_crop.png", "map_soil.png", "map_sensitive.png", "map_govt.png", "map_glv.png", "map_holding.png"):
             if (raw / f).exists():
                 shutil.copy(raw / f, out / f)
         cn = json.loads((site.work / "connectivity.json").read_text(encoding="utf-8"))
@@ -340,7 +405,7 @@ def run(site, ctx):
     db.register_document(site.site_id, "ppt", site.ppt)
     db.save_summary(site.site_id, {"ppt_included": _included(site, ctx)})
     left = [k for k, s_ in (("location / boundary / road / village / ownership slides", "maps"), ("GLV + land cost slide", "landcost"),
-                            ("crop slide", "crop"), ("street view", "streetview"), ("soil slide", "soil"), ("sensitive land slide", "sensitive"), ("government land slide", "govtland")) if not on(s_)]
+                            ("crop slide", "crop"), ("street view", "streetview"), ("soil slide", "soil"), ("sensitive land slide", "sensitive"), ("government land slide", "govtland"), ("GLV map", "glvmap"), ("patta holdings", "owners"), ("executive summary", "summary")) if not on(s_)]
     return f"{site.ppt.name}: {n} slides, {AC} acres" + (f"; left out: {', '.join(left)}" if left else "") + " (PDF only after you confirm the slides)"
 
 

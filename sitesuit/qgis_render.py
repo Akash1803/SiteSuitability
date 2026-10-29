@@ -106,8 +106,10 @@ lab(svm, '"survey_no"', 6.5, "#ffffff", False, "#1a3a5c")
 if not ONLY or "map_village" in ONLY:
     render([svm, pv, red(), sat], mext, "map_village.png", 150, 1, MW, MH, utm)
 po = QgsVectorLayer(PAR, "po", "ogr")
-po.setRenderer(QgsCategorizedSymbolRenderer("ownership", [QgsRendererCategory("Patta", QgsFillSymbol.createSimple({"color": rgba("#f5c242", 208), "outline_color": "#555555", "outline_width": "0.2"}), "Patta"),
-                                                          QgsRendererCategory("Govt", QgsFillSymbol.createSimple({"color": rgba("#2ecc71", 208), "outline_color": "#555555", "outline_width": "0.2"}), "Govt")]))
+po.addExpressionField("CASE WHEN \"ownership\" = 'Govt' THEN 'Government' WHEN \"land_type_english\" IN ('Dry', 'Wet') THEN 'Patta - ' || \"land_type_english\" ELSE 'Patta - Other' END",
+                      QgsField("own_class", QVariant.String))
+OWN = {"Patta - Dry": "#f5c242", "Patta - Wet": "#4a8df0", "Patta - Other": "#ff9800", "Government": "#2ecc71"}
+po.setRenderer(QgsCategorizedSymbolRenderer("own_class", [QgsRendererCategory(k, QgsFillSymbol.createSimple({"color": rgba(c, 208), "outline_color": "#555555", "outline_width": "0.2"}), k) for k, c in OWN.items()]))
 if not ONLY or "map_owner" in ONLY:
     render([po, red(), sat], mext, "map_owner.png", 150, 1, MW, MH, utm)
 pc = QgsVectorLayer(PAR, "pc", "ogr")
@@ -145,6 +147,17 @@ if "map_govt" in ONLY:
     gv = QgsVectorLayer(PAR, "gv", "ogr"); gv.setSubsetString("\"ownership\" = 'Govt'")
     gv.setRenderer(QgsCategorizedSymbolRenderer("govt_cat", [QgsRendererCategory(k, QgsFillSymbol.createSimple({"color": rgba(c, 225), "outline_color": "#000000", "outline_width": "0.3"}), k) for k, c in GC.items()]))
     render([gv, base, red(), sat], mext, "map_govt.png", 150, 1, MW, MH, utm)
+GLVC = {"Up to Rs 3 lakh / acre": "#c8e6c9", "Rs 3 - 5 lakh / acre": "#81c784", "Rs 5 - 10 lakh / acre": "#388e3c", "Above Rs 10 lakh / acre": "#1b5e20",
+        "Up to Rs 100 / sq ft": "#ffcdd2", "Rs 100 - 300 / sq ft": "#e57373", "Above Rs 300 / sq ft": "#b71c1c", "Govt / value 0": "#90a4ae", "No GLV data": "#eeeeee"}
+if "map_glv" in ONLY:
+    pg = QgsVectorLayer(PAR, "pg", "ogr")
+    pg.setRenderer(QgsCategorizedSymbolRenderer("glv_band", [QgsRendererCategory(k, QgsFillSymbol.createSimple({"color": rgba(c, 215), "outline_color": "#444444", "outline_width": "0.2"}), k) for k, c in GLVC.items()]))
+    render([pg, red(), sat], mext, "map_glv.png", 150, 1, MW, MH, utm)
+HOLD = {"2 acres or less": "#fff59d", "More than 2 up to 5 acres": "#ffb74d", "More than 5 up to 10 acres": "#f4511e", "More than 10 acres": "#b71c1c", "Government land": "#90a4ae"}
+if "map_holding" in ONLY:
+    ph = QgsVectorLayer(PAR, "ph", "ogr")
+    ph.setRenderer(QgsCategorizedSymbolRenderer("holding_class", [QgsRendererCategory(k, QgsFillSymbol.createSimple({"color": rgba(c, 215), "outline_color": "#444444", "outline_width": "0.2"}), k) for k, c in HOLD.items()]))
+    render([ph, red(), sat], mext, "map_holding.png", 150, 1, MW, MH, utm)
 if ONLY:
     json.dump({"only": sorted(ONLY)}, open(OUT + "/_render_only.json", "w"))
 else:

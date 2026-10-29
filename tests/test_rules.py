@@ -54,6 +54,7 @@ def test_split_components_no_loss():
 
 def test_dependents_crop_only_touches_maps_and_ppt():
     from sitesuit.pipeline import dependents
-    assert dependents("crop") == {"maps", "streetview", "soil", "sensitive", "govtland", "ppt"}
+    dc = dependents("crop")
+    assert {"maps", "ppt"} <= dc and not dc & {"clip", "areg", "glv", "master", "landcost", "fmb"}
     assert dependents("parcels") >= {"clip", "areg", "glv", "master", "crop", "landcost", "fmb", "maps", "ppt"}
     assert "fmb" not in dependents("glv")

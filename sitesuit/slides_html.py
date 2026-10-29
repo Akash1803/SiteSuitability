@@ -67,12 +67,33 @@ tr.tot td.dc{background:#ffe08a}
 td.tam{font-family:"Noto Sans Tamil",Arial,sans-serif;font-size:31px;line-height:1.25}
 .foot{margin-top:26px;font-size:32px;color:#555;text-align:center}
 </style>"""
-html = BASE + css1 + '<div class="title navy">LAND SUMMARY</div>'
-html += tbl("OWNERSHIP CLASSIFICATION (ACRES)", "Ownership Classification", own_rows, A, A)
-html += tbl("LAND CLASSIFICATION (ACRES)", "Land Classification", cls_rows, A, A)
-import re as _re
-html += _re.sub("<td>([஀-௿])", lambda m: '<td class="tam">' + m.group(1), tbl("GOVERNMENT LAND REMARKS (ACRES)", "Remarks", rem_rows, d["gov_total"], d["gov_total"]))
-html += f'<div class="foot">Area = A-register extent; {d.get("split_surveys", 0)} split edge surveys are counted at the area inside the boundary.</div>'
+ab = d["abstract"]; GT_, PT_ = ab["govt_types"], ab["patta_types"]
+css1b = """<style>.abs th,.abs td{font-size:42px;padding:22px 12px;text-align:center}.abs td.v{text-align:left;padding-left:30px}
+.abs th.g{background:#1e6e36}.abs th.p{background:#1d53a8}.pies{display:flex;gap:60px;justify-content:center;margin-top:60px}
+.pie{width:1480px;border:3px solid #d6dde8;padding:36px 40px;display:flex;align-items:center;gap:50px}
+.pie h4{font-size:48px;color:#0b2e6b;margin-bottom:20px}.pie .lg{font-size:40px;line-height:1.7;color:#333}</style>"""
+html = BASE + css1 + css1b + '<div class="title navy">LAND ABSTRACT</div><div class="sec">OVERALL AREA SUMMARY (ACRES)</div><table class="abs">'
+html += f'<tr><th rowspan="2">Village</th><th class="g" colspan="{len(GT_) + 1}">Government Land</th><th class="p" colspan="{len(PT_) + 1}">Patta Land</th><th rowspan="2">TOTAL</th></tr><tr>'
+html += "".join(f'<th class="g sub">{t}</th>' for t in GT_) + '<th class="g sub">Total Govt</th>' + "".join(f'<th class="p sub">{t}</th>' for t in PT_) + '<th class="p sub">Total Patta</th></tr>'
+for r in ab["rows"] + [ab["total"]]:
+    tot = r is ab["total"]
+    html += f'<tr{" class=tot" if tot else ""}><td class="v">{r["village"]}</td>' + "".join(f'<td>{dash(r["govt"].get(t, 0))}</td>' for t in GT_) + f'<td><b>{f2(sum(r["govt"].values()))}</b></td>'
+    html += "".join(f'<td>{dash(r["patta"].get(t, 0))}</td>' for t in PT_) + f'<td><b>{f2(sum(r["patta"].values()))}</b></td><td><b>{f2(sum(r["govt"].values()) + sum(r["patta"].values()))}</b></td></tr>'
+html += '</table>'
+def _pie(parts, title):
+    tot = sum(v for _, _, v in parts) or 1; stops, acc = [], 0
+    for c, _, v in parts:
+        a = v / tot * 100; stops.append(f"{c} {acc:.2f}% {acc + a:.2f}%"); acc += a
+    lg = "".join(f'<div><span style="display:inline-block;width:30px;height:30px;background:{c};margin-right:16px;vertical-align:middle"></span>{n}: <b>{f2(v)}</b> ac ({v / tot * 100:.2f}%)</div>' for c, n, v in parts)
+    return (f'<div class="pie"><div style="width:480px;height:480px;border-radius:50%;background:conic-gradient({",".join(stops)});flex:none"></div>'
+            f'<div><h4>{title}</h4><div class="lg">{lg}</div></div></div>')
+PC = ["#1d53a8", "#64b5f6", "#ff9800", "#9575cd"]
+html += '<div class="pies">' + _pie([("#1d53a8", "Patta Land", d["patta_total"]), ("#81c784", "Government Land", d["gov_total"])], f"Land distribution (total {f2(A)} acres)")
+if len(PT_) > 1:
+    html += _pie([(PC[k % len(PC)], t, ab["total"]["patta"].get(t, 0)) for k, t in enumerate(PT_)], f"Patta land type (total {f2(d['patta_total'])} acres)") + '</div>'
+else:   # one patta type only: show the land classification of the whole site instead
+    html += _pie([(PC[k % len(PC)], n.split(" (")[0], v["total"]) for k, (n, v) in enumerate(d["lclass"].items())], f"Land classification (total {f2(A)} acres)") + '</div>'
+html += f'<div class="foot">Area = A-register extent; {d.get("split_surveys", 0)} split edge surveys are counted at the area inside the boundary. Government land classes are on the Government Land slide.</div>'
 shot(html + END, "s06_land_summary")
 
 # ---------------- 2. GLV SUMMARY ----------------
@@ -175,22 +196,30 @@ def legend_rows(items):
     return h
 
 
-gv, pv = d["gov_total"], d["patta_total"]
-html = BASE + css3 + '<div class="title">OWNERSHIP CLASSIFICATION</div><div class="body"><div class="map"><img src="map_owner.png"></div><div class="panel"><h3>OWNERSHIP-WISE AREA (ACRES)</h3><div class="hdr"><span>Ownership</span><span>Area (acres)</span></div>'
-html += donut([("#f5c242", pv), ("#2ecc71", gv)], A, "acres total")
-html += legend_rows([("#f5c242", "Patta Land", pv, pv / A * 100), ("#2ecc71", "Government Land", gv, gv / A * 100), ("#9e9e9e", "No Survey Data", 0.0, 0.0)])
+gv, pv = d["gov_total"], d["patta_total"]; oc = d["own_classes"]
+html = BASE + css3 + '<div class="title">OWNERSHIP CLASSIFICATION</div><div class="body"><div class="map"><img src="map_owner.png"></div><div class="panel"><h3>OWNERSHIP-WISE AREA (ACRES)</h3><div class="hdr"><span>Ownership · land type</span><span>Area (acres)</span></div>'
+html += donut([(c, v) for _, v, c in oc], A, "acres total")
+html += legend_rows([(c, n, v, v / A * 100) for n, v, c in oc])
 html += '</div></div>'
 html += f'<div class="cov"><div class="lab">OWNERSHIP<br>COVERAGE</div><div class="stats"><div class="row">'
-for big, small, sub in ((f2(A), "acres", "Total Area"), (f2(pv), f"acres · {pv/A*100:.2f}%", "Patta Land"), (f2(gv), f"acres · {gv/A*100:.2f}%", "Government Land"), ("0.00", "acres", "No Survey Data")):
+for big, small, sub in [(f2(A), "acres", "Total Area")] + [(f2(v), f"acres · {v / A * 100:.2f}%", n) for n, v, c in oc[:3]]:
     html += f'<div><div class="big">{big} <small>{small}</small></div><div class="sub">{sub}</div></div>'
-html += f'</div><div class="bar"><div style="width:{pv/A*100:.2f}%;background:#f5c242;color:#333">Patta {pv/A*100:.2f}%</div><div style="width:{gv/A*100:.2f}%;background:#2ecc71;color:#fff">Govt {gv/A*100:.2f}%</div></div></div></div>'
+html += '</div><div class="bar">' + "".join(f'<div style="width:{v / A * 100:.2f}%;background:{c};color:#111">{n.replace("Patta - ", "")} {v / A * 100:.1f}%</div>' for n, v, c in oc) + '</div></div></div>'
 shot(html + END, "s09_ownership")
 
 # ---------------- 5. CROP ----------------
 cr = d["crop"]; ns, nc, cl = cr["nosurvey"], cr["noncrop"], cr["crop"]
 html = BASE + css3 + '<div class="title">CROP DATA CLASSIFICATION</div><div class="body"><div class="map"><img src="map_crop.png"></div><div class="panel"><h3>CROP DATA – AREA (ACRES)</h3><div class="hdr"><span>Land Type</span><span>Area (acres)</span></div>'
-html += donut([("#bdbdbd", ns), ("#f5c242", nc), ("#2ecc71", cl)], A, "acres total")
 html += legend_rows([("#bdbdbd", "No Survey Data", ns, ns / A * 100), ("#f5c242", "Non-crop Land", nc, nc / A * 100), ("#2ecc71", "Crop Land", cl, cl / A * 100)])
+crops = d.get("crops") or []
+if crops:
+    html += ('<div style="padding:26px 40px 0 40px"><table style="width:100%;border-collapse:collapse;font-size:30px"><tr>'
+             '<th style="background:#0f3b5a;color:#fff;padding:12px;text-align:left">Crop</th><th style="background:#0f3b5a;color:#fff;padding:12px">Crop area (ac)</th>'
+             '<th style="background:#0f3b5a;color:#fff;padding:12px">% of site</th></tr>')
+    for c_ in crops[:6]:
+        html += (f'<tr><td style="padding:10px 12px;border-bottom:2px solid #e3e8ee">{c_["crop"]}<div style="font-size:22px;color:#777">{c_["seasons"]}</div></td>'
+                 f'<td style="text-align:center;border-bottom:2px solid #e3e8ee">{f2(c_["acre"])}</td><td style="text-align:center;border-bottom:2px solid #e3e8ee">{c_["acre"] / A * 100:.2f}%</td></tr>')
+    html += '</table><div style="font-size:22px;color:#666;margin-top:10px">Crop area = largest sown area of the crop in any surveyed season.</div></div>'
 html += '</div></div>'
 html += f'<div class="cov"><div class="lab">CROP DATA<br>COVERAGE</div><div class="stats"><div class="row">'
 for big, small, sub in ((f2(A), "acres", "Total Area"), (f2(ns), f"acres · {ns/A*100:.2f}%", "No Survey Data"), (f2(cl), f"acres · {cl/A*100:.2f}%", "Crop Land"), (f2(nc), f"acres · {nc/A*100:.2f}%", "Non-crop Land")):
@@ -275,6 +304,64 @@ if d.get("govtland"):
         line += " &nbsp;|&nbsp; Soil grade: " + ", ".join(f"{k} {f2(v)}" for k, v in list(th.items())[:3])
     html += f'<div class="sub" style="margin-top:12px;font-size:30px">{line}</div></div></div>'
     shot(html + END, "s09b_govt"); EXTRA.append("s09b_govt")
+
+
+# ---------------- EXECUTIVE SUMMARY (after title) ----------------
+if d.get("exec"):
+    ex = d["exec"]
+    css_ex = """<style>.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:40px;margin-top:50px}
+.card{border:3px solid #d6dde8;border-radius:30px;padding:46px 44px;background:#f7fbff;min-height:600px}
+.card .k{font-size:46px;color:#555;font-weight:700}.card .v{font-size:112px;font-weight:700;color:#0f3b5a;margin-top:30px;line-height:1.05}
+.card .v small{font-size:50px;color:#555}.card .s{font-size:40px;color:#333;margin-top:28px;line-height:1.4}
+.card.g{background:#f1f8f3}.card.o{background:#fff8ee}</style>"""
+    html = BASE + css_ex + '<div class="title">EXECUTIVE SUMMARY</div><div class="grid">'
+    for c_ in ex["cards"]:
+        html += f'<div class="card {c_.get("cls", "")}"><div class="k">{c_["k"]}</div><div class="v">{c_["v"]}</div><div class="s">{c_["s"]}</div></div>'
+    html += '</div>'
+    if ex.get("notes"):
+        html += ('<div style="margin-top:50px;border:3px solid #d6dde8;border-radius:30px;padding:36px 50px;font-size:42px;color:#333;line-height:1.55;'
+                 'columns:2;column-gap:80px"><div style="font-weight:700;color:#0f3b5a">Connectivity</div>' + "".join(f"<div>• {n}</div>" for n in ex["notes"]) + '</div>')
+    shot(html + END, "s01b_summary"); EXTRA.append("s01b_summary")
+
+# ---------------- GLV MAP (after GLV summary) ----------------
+if d.get("glvmap"):
+    gm = d["glvmap"]
+    html = BASE + css3 + '<div class="title">GUIDELINE LAND VALUE (GLV) MAP</div><div class="body"><div class="map"><img src="map_glv.png"></div><div class="panel"><h3>GLV BAND – AREA (ACRES)</h3><div class="hdr"><span>GLV band (as quoted)</span><span>Area (acres)</span></div>'
+    for r in gm["rows"]:
+        p_ = r["acre"] / A * 100
+        rr = "" if r["lo"] <= 0 else (f' · Rs {r["lo"]:,.0f}' + (f' - {r["hi"]:,.0f}' if r["hi"] != r["lo"] else ""))
+        html += (f'<div class="vrow" style="padding-top:20px"><div class="nm" style="font-size:40px"><span class="l"><span class="dot" style="background:{r["color"]}"></span>{r["band"]}</span><span>{f2(r["acre"])}</span></div>'
+                 f'<div class="tr"><div style="width:{max(p_, 0.6):.1f}%;background:{r["color"]}"></div></div><div class="p">{pct(p_)} · {r["n"]} subdivisions{rr}</div></div>')
+    html += '</div></div><div class="cov"><div class="lab">GLV<br>RANGE</div><div class="stats"><div class="row">'
+    ar, sr = gm.get("acre_range"), gm.get("sqft_range")
+    items = [(f2(A), "acres", "Total Area"), ((f"{ar[0] / 1e5:.1f} - {ar[1] / 1e5:.1f}" if ar else "-"), "lakh / acre", "Per acre (land)"),
+             ((f"{sr[0]:,.0f} - {sr[1]:,.0f}" if sr else "-"), "Rs / sq ft", "Per sq ft (layout plots)"),
+             (f2(sum(r["acre"] for r in gm["rows"] if r["band"] == "Govt / value 0")), "acres", "Govt land (value 0)")]
+    for big, small, sub in items:
+        html += f'<div><div class="big">{big} <small>{small}</small></div><div class="sub">{sub}</div></div>'
+    html += '</div><div class="bar">' + "".join(f'<div style="width:{r["acre"] / A * 100:.2f}%;background:{r["color"]}"></div>' for r in gm["rows"]) + '</div></div></div>'
+    shot(html + END, "s07b_glvmap"); EXTRA.append("s07b_glvmap")
+
+# ---------------- PATTA HOLDINGS (after government land) ----------------
+if d.get("owners"):
+    ow = d["owners"]
+    html = BASE + css3 + '<div class="title">PATTA HOLDINGS – OWNER DISTRIBUTION</div><div class="body"><div class="map"><img src="map_holding.png"></div><div class="panel"><h3>PATTAS BY HOLDING SIZE</h3><div class="hdr"><span>Area inside the site</span><span>Pattas · acres</span></div>'
+    for b in ow["by_range"]:
+        p_ = b["pattas"] / max(ow["pattas"], 1) * 100
+        html += (f'<div class="vrow" style="padding-top:18px"><div class="nm" style="font-size:38px"><span class="l"><span class="dot" style="background:{b["color"]}"></span>{b["range"]}</span><span>{b["pattas"]} · {f2(b["acre"])}</span></div>'
+                 f'<div class="tr"><div style="width:{max(p_, 0.6):.1f}%;background:{b["color"]}"></div></div><div class="p">{p_:.1f}% of pattas · {b["acre"] / max(ow["patta_acre"], 1e-9) * 100:.1f}% of patta land</div></div>')
+    html += '<div style="padding:24px 40px 0 40px;font-size:30px;font-weight:700;color:#0f3b5a">Largest pattas</div><div style="padding:6px 40px 0 40px">'
+    for t in ow["top"][:4]:
+        html += (f'<div style="font-size:27px;padding:8px 0;border-bottom:2px solid #e3e8ee"><b>Patta {t["patta"]}</b> ({t["village"]}) · {f2(t["acre"])} ac · {t["owner_count"]} owners'
+                 f'<div class="tam" style="font-family:\'Noto Sans Tamil\',Arial;font-size:24px;color:#444">{t["owners"]}</div></div>')
+    html += '</div></div></div><div class="cov"><div class="lab">OWNER<br>DISTRIBUTION</div><div class="stats"><div class="row">'
+    small = next((b for b in ow["by_range"] if b["range"] == "2 acres or less"), {"pattas": 0})
+    for big, smalltxt, sub in ((str(ow["pattas"]), "pattas", "Patta numbers in the site"), (f2(ow["patta_acre"]), "acres", "Patta land"),
+                               (str(small["pattas"]), f"pattas · {small['pattas'] / max(ow['pattas'], 1) * 100:.0f}%", "Holdings of 2 acres or less"),
+                               (str(ow["companies"]), f"pattas · {f2(ow['company_acre'])} ac", "Held by companies")):
+        html += f'<div><div class="big">{big} <small>{smalltxt}</small></div><div class="sub">{sub}</div></div>'
+    html += '</div><div class="bar">' + "".join(f'<div style="width:{b["pattas"] / max(ow["pattas"], 1) * 100:.2f}%;background:{b["color"]}"></div>' for b in ow["by_range"]) + '</div></div></div>'
+    shot(html + END, "s09c_owners"); EXTRA.append("s09c_owners")
 
 # ---------------- screenshots ----------------
 from selenium import webdriver

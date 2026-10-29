@@ -38,10 +38,10 @@ class Ctx:
 
 # inputs each stage needs (crop is optional for the PPT: without it the crop slide shows "No Survey Data")
 REQUIRES = {"clip": ("parcels",), "areg": ("clip",), "glv": ("parcels",), "master": ("areg",), "crop": ("master",),
-            "landcost": ("master", "glv"), "fmb": ("parcels",), "maps": ("master",), "streetview": ("maps",), "soil": ("master", "maps"), "sensitive": ("master", "maps"), "govtland": ("master", "maps"), "glvmap": ("master", "maps", "glv"), "owners": ("master", "maps"), "companies": ("master", "maps"), "dimensions": ("maps",),
+            "landcost": ("master", "glv"), "fmb": ("parcels",), "maps": ("master",), "streetview": ("maps",), "soil": ("master", "maps"), "sensitive": ("master", "maps"), "govtland": ("master", "maps"), "glvmap": ("master", "maps", "glv"), "owners": ("master", "maps"), "companies": ("master", "maps"), "dimensions": ("maps",), "regional": ("maps",), "sitephotos": ("maps",),
             "summary": ("master",), "ppt": ("master",)}
 # what goes stale when a stage re-runs (optional inputs included)
-USES = {**REQUIRES, "master": ("areg", "glv"), "maps": ("master", "crop"), "govtland": ("master", "maps", "soil"), "ppt": ("master", "landcost", "maps", "crop", "streetview", "soil", "sensitive", "govtland", "glvmap", "owners", "companies", "dimensions", "summary")}
+USES = {**REQUIRES, "master": ("areg", "glv"), "maps": ("master", "crop"), "govtland": ("master", "maps", "soil"), "ppt": ("master", "landcost", "maps", "crop", "streetview", "soil", "sensitive", "govtland", "glvmap", "owners", "companies", "dimensions", "regional", "sitephotos", "summary")}
 
 
 def dependents(stage):
@@ -93,7 +93,7 @@ def run(site, stages=None, ctx=None, force=False, pause_at_review=False):
         status_now = db.stage_status(site.site_id) if site.site_id else {}
         if not force and status_now.get(nm, ("",))[0] == "done":
             if hasattr(st, "stale") and st.stale(site, ctx):
-                ctx.log(f"[{nm}] ticks changed since it was built - building it again")
+                ctx.log(f"[{nm}] out of date (ticks or map style changed) - building it again")
             else:
                 ctx.log(f"[{nm}] already done - skipped"); continue
         missing = [d for d in REQUIRES.get(nm, ()) if status_now.get(d, ("",))[0] != "done"]

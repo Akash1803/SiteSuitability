@@ -21,11 +21,14 @@ Pick a site boundary, press **Run**, get the full preliminary site analysis:
 | 15 | Patta holdings slide | A-register patta number + owners | `Patta_Holdings` sheet, holding-size map, largest pattas |
 | 16 | Company ownership slide | A-register owners that are companies (Pvt Ltd, realtors, promoters, builders ...) or institutions (trust, diocese, mutt ...) | `Company_Ownership` sheet, map + slide after patta holdings (only when there are such owners) |
 | 17 | Boundary dimensions + frontage | boundary + OSM roads / railway | drawn on the Boundary slide: spans, overall extent, perimeter, frontage per road |
-| 18 | Executive summary slide | every finished stage | one KPI slide after the title |
-| 19 | Slides + PPT | deck template | `07_PPT_Maps/*.png`, `08_Output/*_Preliminary_Site_Analysis_PPT.pptx` |
+| 18 | Regional context slide | major seaports / airport (built-in list), nearest SIPCOT parks, OSM NH network, OSRM road distance + drive time | wide map after the location map |
+| 19 | Site photos slide | your photos in `07_PPT_Maps/site_photos`, placed by their GPS (EXIF) | map with numbered thumbnails after street view (only when photos exist) |
+| 20 | Executive summary slide | every finished stage | one KPI slide after the title |
+| 21 | Slides + PPT | deck template | `07_PPT_Maps/*.png`, `08_Output/*_Preliminary_Site_Analysis_PPT.pptx` |
 
 The PDF is made only after the PPT is confirmed (button in the app / `cli pdf`).
 Land Summary is now a village-wise Land Abstract, Ownership splits patta Dry / Wet, Crop lists the area per crop.
+Every parcel map carries small survey/subdivision labels. Panels are placed away from the site, the Google Maps link and the slide-show buttons.
 Untick a stage and its slides leave the PPT; changing ticks after a run rebuilds only what depends on them.
 
 ## Rules built in

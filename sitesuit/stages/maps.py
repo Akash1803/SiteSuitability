@@ -17,6 +17,11 @@ from .. import db
 from ..config import SETTINGS
 
 NAME, TITLE = "maps", "Connectivity + map renders"
+RENDER_VERSION = 3      # bump when the map style changes: finished sites re-render on the next Run
+
+
+def stale(site, ctx):
+    return db.get_summary(site.site_id).get("render_version") != RENDER_VERSION
 PALETTE = ["#2ecc71", "#4a8df0", "#ff7f0e", "#a855f7", "#f0c419", "#e74c3c", "#1abc9c", "#ff69b4"]
 
 
@@ -90,11 +95,13 @@ def connectivity(site, geom, L, U):
     vr, vall = nearest(R.highway.isin(["tertiary", "unclassified"]) & R.name.notna() & (R.km <= 1.5), 2)
     for r in vr.itertuples():
         out["lines"].append(f"{r.name} - {r.km:.2f} km")
-    out["village_road_ids"] = [int(i) for i in vall[vall.name.isin(vr.name)].osm_id]
+    # highlight only the stretches of these roads near the site (same-named roads far away are left out)
+    near = lambda df, key, keys: [int(r.osm_id) for r in df[df[key].isin(keys)].itertuples() if r.km <= max(1.5, df[df[key] == getattr(r, key)].km.min() + 1.0)]
+    out["village_road_ids"] = near(vall, "name", set(vr.name))
     md, mall = nearest(R.ref.fillna("").str.startswith("MDR") | ((R.highway == "secondary") & R.name.notna()), 2)
     for r in md.itertuples():
         out["lines"].append(f"{r.label} - {r.km:.2f} km")
-    out["road_ids"] = [int(i) for i in mall[mall.label.isin(md.label)].osm_id]
+    out["road_ids"] = near(mall, "label", set(md.label))
     S = L["stations"].copy()
     if len(S):
         S["km"] = km(S); S = S.sort_values("km").head(2)
@@ -155,7 +162,8 @@ def run(site, ctx):
               "road_ids": cn["road_ids"], "village_road_ids": cn["village_road_ids"], "village_colors": {v: PALETTE[i % len(PALETTE)] for i, v in enumerate(vills)}}
     (site.work / "render_params.json").write_text(json.dumps(params), encoding="utf-8")
     qgis_render(site, ctx)
-    db.save_summary(site.site_id, {"connectivity": {k: v for k, v in cn.items() if k not in ("road_ids", "village_road_ids")}, "village_colors": params["village_colors"]})
+    db.save_summary(site.site_id, {"connectivity": {k: v for k, v in cn.items() if k not in ("road_ids", "village_road_ids")}, "village_colors": params["village_colors"],
+                                   "render_version": RENDER_VERSION})
     return "; ".join(cn["lines"][:6])
 
 
@@ -168,6 +176,7 @@ def qgis_render(site, ctx, only=None):
         raise RuntimeError("run the 'Connectivity + map renders' stage first")
     params = json.loads(src.read_text(encoding="utf-8")); raw = Path(params["out_dir"])
     params["parcels"] = str(site.subdivisions); params["only"] = only or []; params["govt_colors"] = str(site.work / "govt_colors.json"); params["company_colors"] = str(site.work / "company_colors.json")
+    params["regional_gpkg"] = str(site.work / "regional.gpkg"); params["regional_bbox"] = str(site.work / "regional_bbox.json")
     pj = site.work / ("render_params_only.json" if only else "render_params.json"); pj.write_text(json.dumps(params), encoding="utf-8")
     flag = raw / ("_render_only.json" if only else "_render_info.json"); flag.unlink(missing_ok=True)
     ctx.log(f"rendering {'+'.join(only) if only else 'satellite maps'} with QGIS ...")

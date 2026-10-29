@@ -36,6 +36,23 @@ def lab(layer, expr, size, color, curved=True, buf="#000000"):
     layer.setLabeling(QgsVectorLayerSimpleLabeling(s)); layer.setLabelsEnabled(True)
 
 
+def kide_labels(layer, size=4.2):
+    """small survey/subdivision number on each parcel; QGIS drops labels that would collide, so dense layouts stay readable"""
+    pl = QgsPalLayerSettings(); pl.fieldName = "kide"; pl.isExpression = False
+    try:
+        pl.placement = Qgis.LabelPlacement.OverPoint
+    except Exception:
+        pass
+    tf_ = QgsTextFormat(); fn_ = QFont("Arial"); fn_.setBold(True); tf_.setFont(fn_); tf_.setSize(size); tf_.setColor(QColor("#ffffff"))
+    bf_ = QgsTextBufferSettings(); bf_.setEnabled(True); bf_.setSize(0.6); bf_.setColor(QColor("#1a1a1a")); tf_.setBuffer(bf_); pl.setFormat(tf_)
+    try:
+        pl.fitInPolygonOnly = True
+    except Exception:
+        pass
+    layer.setLabeling(QgsVectorLayerSimpleLabeling(pl)); layer.setLabelsEnabled(True)
+    return layer
+
+
 def fit(box, pad, w_=W, h_=H):
     cx, cy = box.center().x(), box.center().y(); w = box.width() * pad; h = box.height() * pad
     if w / h < w_ / h_: w = h * w_ / h_
@@ -102,7 +119,7 @@ for f in pv.getFeatures():
 for (v, s), gs in sg.items():
     ft = QgsFeature(svm.fields()); ft.setAttribute("survey_no", s); ft.setGeometry(QgsGeometry.unaryUnion(gs)); spr.addFeature(ft)
 svm.updateExtents(); svm.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({"color": "0,0,0,0", "outline_color": "#1a3a5c", "outline_width": "0.5"})))
-lab(svm, '"survey_no"', 6.5, "#ffffff", False, "#1a3a5c")
+kide_labels(pv)
 if not ONLY or "map_village" in ONLY:
     render([svm, pv, red(), sat], mext, "map_village.png", 150, 1, MW, MH, utm)
 po = QgsVectorLayer(PAR, "po", "ogr")
@@ -110,6 +127,7 @@ po.addExpressionField("CASE WHEN \"ownership\" = 'Govt' THEN 'Government' WHEN \
                       QgsField("own_class", QVariant.String))
 OWN = {"Patta - Dry": "#f5c242", "Patta - Wet": "#4a8df0", "Patta - Other": "#ff9800", "Government": "#2ecc71"}
 po.setRenderer(QgsCategorizedSymbolRenderer("own_class", [QgsRendererCategory(k, QgsFillSymbol.createSimple({"color": rgba(c, 208), "outline_color": "#555555", "outline_width": "0.2"}), k) for k, c in OWN.items()]))
+kide_labels(po)
 if not ONLY or "map_owner" in ONLY:
     render([po, red(), sat], mext, "map_owner.png", 150, 1, MW, MH, utm)
 pc = QgsVectorLayer(PAR, "pc", "ogr")
@@ -121,6 +139,7 @@ pc.setRenderer(QgsCategorizedSymbolRenderer("crop_cls", [
     QgsRendererCategory("Crop Land", QgsFillSymbol.createSimple({"color": "46,204,113,208", "outline_color": "#555555", "outline_width": "0.2"}), "Crop Land"),
     QgsRendererCategory("Non-crop Land", QgsFillSymbol.createSimple({"color": "245,194,66,208", "outline_color": "#555555", "outline_width": "0.2"}), "Non-crop Land"),
     QgsRendererCategory("No Survey Data", QgsFillSymbol.createSimple({"color": "224,224,224,208", "outline_color": "#555555", "outline_width": "0.2"}), "No Survey Data")]))
+kide_labels(pc)
 if not ONLY or "map_crop" in ONLY:
     render([pc, red(), sat], mext, "map_crop.png", 150, 1, MW, MH, utm)
 SOIL_COLORS = ["#1b5e20", "#43a047", "#9ccc65", "#d4e157", "#ffee58", "#ffca28", "#ffa726", "#ff7043", "#e53935", "#8d6e63", "#90a4ae"]
@@ -129,7 +148,7 @@ if "map_soil" in ONLY:
     vals = sorted({f["tharam_label"] for f in ps.getFeatures() if f["tharam_label"]}, key=lambda v: (not v.startswith("Tharam"), int(v.split()[-1]) if v.split()[-1].isdigit() else 99))
     cats = [QgsRendererCategory(v, QgsFillSymbol.createSimple({"color": rgba("#bdbdbd" if not v.startswith("Tharam") else SOIL_COLORS[k % len(SOIL_COLORS)], 210), "outline_color": "#444444", "outline_width": "0.2"}), v)
             for k, v in enumerate(vals)]
-    ps.setRenderer(QgsCategorizedSymbolRenderer("tharam_label", cats))
+    ps.setRenderer(QgsCategorizedSymbolRenderer("tharam_label", cats)); kide_labels(ps)
     render([ps, red(), sat], mext, "map_soil.png", 150, 1, MW, MH, utm)
     json.dump({"tharam_colors": {v: ("#bdbdbd" if not v.startswith("Tharam") else SOIL_COLORS[k % len(SOIL_COLORS)]) for k, v in enumerate(vals)}}, open(OUT + "/_soil_colors.json", "w"))
 SENS = {"Water body": "#1e88e5", "Channel": "#00acc1", "Temple/Church/Mosque": "#8e24aa", "Burial": "#5d4037", "Village site": "#f4511e", "Forest": "#2e7d32",
@@ -139,32 +158,48 @@ if "map_sensitive" in ONLY:
     base.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({"color": "255,255,255,40", "outline_color": "#ffffff", "outline_width": "0.15"})))
     se = QgsVectorLayer(PAR, "se", "ogr"); se.setSubsetString("\"sensitive_cat\" <> ''")
     se.setRenderer(QgsCategorizedSymbolRenderer("sensitive_cat", [QgsRendererCategory(k, QgsFillSymbol.createSimple({"color": rgba(c, 225), "outline_color": "#000000", "outline_width": "0.3"}), k) for k, c in SENS.items()]))
-    render([se, base, red(), sat], mext, "map_sensitive.png", 150, 1, MW, MH, utm)
+    kide_labels(se); render([se, base, red(), sat], mext, "map_sensitive.png", 150, 1, MW, MH, utm)
 if "map_govt" in ONLY:
     GC = json.load(open(A["govt_colors"], encoding="utf-8"))
     base = QgsVectorLayer(PAR, "base", "ogr")
     base.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({"color": "255,255,255,35", "outline_color": "#ffffff", "outline_width": "0.12"})))
     gv = QgsVectorLayer(PAR, "gv", "ogr"); gv.setSubsetString("\"ownership\" = 'Govt'")
     gv.setRenderer(QgsCategorizedSymbolRenderer("govt_cat", [QgsRendererCategory(k, QgsFillSymbol.createSimple({"color": rgba(c, 225), "outline_color": "#000000", "outline_width": "0.3"}), k) for k, c in GC.items()]))
-    render([gv, base, red(), sat], mext, "map_govt.png", 150, 1, MW, MH, utm)
+    kide_labels(gv); render([gv, base, red(), sat], mext, "map_govt.png", 150, 1, MW, MH, utm)
 GLVC = {"Up to Rs 3 lakh / acre": "#c8e6c9", "Rs 3 - 5 lakh / acre": "#81c784", "Rs 5 - 10 lakh / acre": "#388e3c", "Above Rs 10 lakh / acre": "#1b5e20",
         "Up to Rs 100 / sq ft": "#ffcdd2", "Rs 100 - 300 / sq ft": "#e57373", "Above Rs 300 / sq ft": "#b71c1c", "Govt / value 0": "#90a4ae", "No GLV data": "#eeeeee"}
 if "map_glv" in ONLY:
     pg = QgsVectorLayer(PAR, "pg", "ogr")
     pg.setRenderer(QgsCategorizedSymbolRenderer("glv_band", [QgsRendererCategory(k, QgsFillSymbol.createSimple({"color": rgba(c, 215), "outline_color": "#444444", "outline_width": "0.2"}), k) for k, c in GLVC.items()]))
-    render([pg, red(), sat], mext, "map_glv.png", 150, 1, MW, MH, utm)
+    kide_labels(pg); render([pg, red(), sat], mext, "map_glv.png", 150, 1, MW, MH, utm)
 HOLD = {"2 acres or less": "#fff59d", "More than 2 up to 5 acres": "#ffb74d", "More than 5 up to 10 acres": "#f4511e", "More than 10 acres": "#b71c1c", "Government land": "#90a4ae"}
 if "map_holding" in ONLY:
     ph = QgsVectorLayer(PAR, "ph", "ogr")
     ph.setRenderer(QgsCategorizedSymbolRenderer("holding_class", [QgsRendererCategory(k, QgsFillSymbol.createSimple({"color": rgba(c, 215), "outline_color": "#444444", "outline_width": "0.2"}), k) for k, c in HOLD.items()]))
-    render([ph, red(), sat], mext, "map_holding.png", 150, 1, MW, MH, utm)
+    kide_labels(ph); render([ph, red(), sat], mext, "map_holding.png", 150, 1, MW, MH, utm)
 if "map_company" in ONLY:
     CC = json.load(open(A["company_colors"], encoding="utf-8"))
     base = QgsVectorLayer(PAR, "base", "ogr")
     base.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({"color": "255,255,255,35", "outline_color": "#ffffff", "outline_width": "0.12"})))
     pcm = QgsVectorLayer(PAR, "pcm", "ogr"); pcm.setSubsetString("\"company_map\" <> ''")
     pcm.setRenderer(QgsCategorizedSymbolRenderer("company_map", [QgsRendererCategory(k, QgsFillSymbol.createSimple({"color": rgba(c, 225), "outline_color": "#000000", "outline_width": "0.3"}), k) for k, c in CC.items()]))
-    render([pcm, base, red(), sat], mext, "map_company.png", 150, 1, MW, MH, utm)
+    kide_labels(pcm); render([pcm, base, red(), sat], mext, "map_company.png", 150, 1, MW, MH, utm)
+if "region_wide" in ONLY:
+    bb4 = json.load(open(A["regional_bbox"], encoding="utf-8"))
+    rx = QgsCoordinateTransform(QgsCoordinateReferenceSystem("EPSG:4326"), WEB, P).transformBoundingBox(QgsRectangle(*bb4))
+    rext = fit(rx, 1.0)
+    dw = nofill(QgsVectorLayer(A["regional_gpkg"] + "|layername=district", "dw", "ogr"), "#3fb6ff", 1.0)
+    nhw = QgsVectorLayer(A["regional_gpkg"] + "|layername=nh", "nhw", "ogr")
+    nhw.setRenderer(QgsSingleSymbolRenderer(QgsLineSymbol.createSimple({"color": "#ffd600", "width": "1.1"})))
+    bw2 = nofill(QgsVectorLayer(A["boundary"], "b2", "ogr"), "#ff1744", 1.2)
+    render([bw2, nhw, dw, sat], rext, "region_wide.png", 110, 2)
+    lblw = {}
+    for f in dw.getFeatures():
+        gg = QgsGeometry(f.geometry()); gg.transform(QgsCoordinateTransform(dw.crs(), WEB, P)); vis = gg.intersection(QgsGeometry.fromRect(rext))
+        if vis.isEmpty() or vis.area() < rext.width() * rext.height() * 0.04:
+            continue
+        pt = vis.poleOfInaccessibility(500)[0].asPoint(); lblw[f["district"]] = [pt.x(), pt.y()]
+    json.dump({"ext": [rext.xMinimum(), rext.yMinimum(), rext.xMaximum(), rext.yMaximum()], "dlab": lblw}, open(OUT + "/_region_wide.json", "w"))
 if ONLY:
     json.dump({"only": sorted(ONLY)}, open(OUT + "/_render_only.json", "w"))
 else:

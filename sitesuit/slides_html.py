@@ -363,6 +363,25 @@ if d.get("owners"):
     html += '</div><div class="bar">' + "".join(f'<div style="width:{b["pattas"] / max(ow["pattas"], 1) * 100:.2f}%;background:{b["color"]}"></div>' for b in ow["by_range"]) + '</div></div></div>'
     shot(html + END, "s09c_owners"); EXTRA.append("s09c_owners")
 
+
+# ---------------- COMPANY / INSTITUTION OWNERSHIP (after patta holdings) ----------------
+if d.get("companies") and d["companies"]["n"]:
+    co = d["companies"]
+    html = BASE + css3 + '<div class="title">COMPANY &amp; INSTITUTION OWNERSHIP</div><div class="body"><div class="map"><img src="map_company.png"></div><div class="panel"><h3>LAND HELD BY COMPANIES / INSTITUTIONS</h3><div class="hdr"><span>Owner (as in the A-register)</span><span>Area (acres)</span></div>'
+    for r in co["rows"][:7]:
+        p_ = r["acre"] / A * 100
+        html += (f'<div class="vrow" style="padding-top:16px"><div class="nm" style="font-size:31px;font-family:\'Noto Sans Tamil\',Arial"><span class="l"><span class="dot" style="background:{r["color"]};flex:none"></span>{r["name"][:46]}</span><span>{f2(r["acre"])}</span></div>'
+                 f'<div class="p">{r["type"]} · {r["pattas"]} patta{"s" if r["pattas"] != 1 else ""} · {r["villages"]} · {pct(p_)} of site</div></div>')
+    if len(co["rows"]) > 7:
+        html += f'<div style="padding:18px 50px;font-size:28px;color:#555">+{len(co["rows"]) - 7} more in the Company_Ownership sheet</div>'
+    html += '</div></div><div class="cov"><div class="lab">COMPANY<br>HOLDINGS</div><div class="stats"><div class="row">'
+    rg = co["ranges"]
+    for big, small, sub in ((str(co["n"]), "owners", "Companies / institutions"), (f2(co["acre"]), f"acres · {co['acre'] / A * 100:.2f}%", "Land they hold"),
+                            (str(rg["More than 10 acres"]), "owners", "More than 10 acres"), (str(rg["More than 5 acres"] + rg["5 acres or less"]), "owners", "10 acres or less")):
+        html += f'<div><div class="big">{big} <small>{small}</small></div><div class="sub">{sub}</div></div>'
+    html += '</div><div class="bar">' + "".join(f'<div style="width:{r["acre"] / co["acre"] * 100:.2f}%;background:{r["color"]}"></div>' for r in co["rows"]) + '</div></div></div>'
+    shot(html + END, "s09d_company"); EXTRA.append("s09d_company")
+
 # ---------------- screenshots ----------------
 from selenium import webdriver
 o = webdriver.ChromeOptions(); o.add_argument("--headless=new"); o.add_argument("--window-size=3240,2250"); o.add_argument("--force-device-scale-factor=1"); o.add_argument("--hide-scrollbars")

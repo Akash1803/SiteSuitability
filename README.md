@@ -19,8 +19,10 @@ Pick a site boundary, press **Run**, get the full preliminary site analysis:
 | 13 | Government land classification slide | A-register remarks (odai, railway, pathway, tank ...) or land type + poramboke code; names from `Poramboke_Codes.xlsx` in the templates folder | `Govt_Land_Classification` sheet, map + MIS slide after ownership |
 | 14 | GLV map slide | GLV as quoted, banded per acre / per sq ft | map + band table after the GLV summary |
 | 15 | Patta holdings slide | A-register patta number + owners | `Patta_Holdings` sheet, holding-size map, largest pattas |
-| 16 | Executive summary slide | every finished stage | one KPI slide after the title |
-| 17 | Slides + PPT | deck template | `07_PPT_Maps/*.png`, `08_Output/*_Preliminary_Site_Analysis_PPT.pptx` |
+| 16 | Company ownership slide | A-register owners that are companies (Pvt Ltd, realtors, promoters, builders ...) or institutions (trust, diocese, mutt ...) | `Company_Ownership` sheet, map + slide after patta holdings (only when there are such owners) |
+| 17 | Boundary dimensions + frontage | boundary + OSM roads / railway | drawn on the Boundary slide: spans, overall extent, perimeter, frontage per road |
+| 18 | Executive summary slide | every finished stage | one KPI slide after the title |
+| 19 | Slides + PPT | deck template | `07_PPT_Maps/*.png`, `08_Output/*_Preliminary_Site_Analysis_PPT.pptx` |
 
 The PDF is made only after the PPT is confirmed (button in the app / `cli pdf`).
 Land Summary is now a village-wise Land Abstract, Ownership splits patta Dry / Wet, Crop lists the area per crop.

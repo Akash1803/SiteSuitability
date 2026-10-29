@@ -38,10 +38,10 @@ class Ctx:
 
 # inputs each stage needs (crop is optional for the PPT: without it the crop slide shows "No Survey Data")
 REQUIRES = {"clip": ("parcels",), "areg": ("clip",), "glv": ("parcels",), "master": ("areg",), "crop": ("master",),
-            "landcost": ("master", "glv"), "fmb": ("parcels",), "maps": ("master",), "streetview": ("maps",), "soil": ("master", "maps"), "sensitive": ("master", "maps"), "govtland": ("master", "maps"), "glvmap": ("master", "maps", "glv"), "owners": ("master", "maps"),
+            "landcost": ("master", "glv"), "fmb": ("parcels",), "maps": ("master",), "streetview": ("maps",), "soil": ("master", "maps"), "sensitive": ("master", "maps"), "govtland": ("master", "maps"), "glvmap": ("master", "maps", "glv"), "owners": ("master", "maps"), "companies": ("master", "maps"), "dimensions": ("maps",),
             "summary": ("master",), "ppt": ("master",)}
 # what goes stale when a stage re-runs (optional inputs included)
-USES = {**REQUIRES, "master": ("areg", "glv"), "maps": ("master", "crop"), "govtland": ("master", "maps", "soil"), "ppt": ("master", "landcost", "maps", "crop", "streetview", "soil", "sensitive", "govtland", "glvmap", "owners", "summary")}
+USES = {**REQUIRES, "master": ("areg", "glv"), "maps": ("master", "crop"), "govtland": ("master", "maps", "soil"), "ppt": ("master", "landcost", "maps", "crop", "streetview", "soil", "sensitive", "govtland", "glvmap", "owners", "companies", "dimensions", "summary")}
 
 
 def dependents(stage):

@@ -158,6 +158,13 @@ if "map_holding" in ONLY:
     ph = QgsVectorLayer(PAR, "ph", "ogr")
     ph.setRenderer(QgsCategorizedSymbolRenderer("holding_class", [QgsRendererCategory(k, QgsFillSymbol.createSimple({"color": rgba(c, 215), "outline_color": "#444444", "outline_width": "0.2"}), k) for k, c in HOLD.items()]))
     render([ph, red(), sat], mext, "map_holding.png", 150, 1, MW, MH, utm)
+if "map_company" in ONLY:
+    CC = json.load(open(A["company_colors"], encoding="utf-8"))
+    base = QgsVectorLayer(PAR, "base", "ogr")
+    base.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({"color": "255,255,255,35", "outline_color": "#ffffff", "outline_width": "0.12"})))
+    pcm = QgsVectorLayer(PAR, "pcm", "ogr"); pcm.setSubsetString("\"company_map\" <> ''")
+    pcm.setRenderer(QgsCategorizedSymbolRenderer("company_map", [QgsRendererCategory(k, QgsFillSymbol.createSimple({"color": rgba(c, 225), "outline_color": "#000000", "outline_width": "0.3"}), k) for k, c in CC.items()]))
+    render([pcm, base, red(), sat], mext, "map_company.png", 150, 1, MW, MH, utm)
 if ONLY:
     json.dump({"only": sorted(ONLY)}, open(OUT + "/_render_only.json", "w"))
 else:

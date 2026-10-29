@@ -167,7 +167,7 @@ def qgis_render(site, ctx, only=None):
     if not src.exists():
         raise RuntimeError("run the 'Connectivity + map renders' stage first")
     params = json.loads(src.read_text(encoding="utf-8")); raw = Path(params["out_dir"])
-    params["parcels"] = str(site.subdivisions); params["only"] = only or []; params["govt_colors"] = str(site.work / "govt_colors.json")
+    params["parcels"] = str(site.subdivisions); params["only"] = only or []; params["govt_colors"] = str(site.work / "govt_colors.json"); params["company_colors"] = str(site.work / "company_colors.json")
     pj = site.work / ("render_params_only.json" if only else "render_params.json"); pj.write_text(json.dumps(params), encoding="utf-8")
     flag = raw / ("_render_only.json" if only else "_render_info.json"); flag.unlink(missing_ok=True)
     ctx.log(f"rendering {'+'.join(only) if only else 'satellite maps'} with QGIS ...")

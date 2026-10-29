@@ -24,6 +24,10 @@ def _and(xs):
     return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1]
 
 
+def to3857(lon, lat):
+    return lon * 20037508.34 / 180, math.log(math.tan((90 + lat) * math.pi / 360)) * 6378137
+
+
 def compose(site, raw, out, AC, summ, cn):
     I = json.loads((raw / "_render_info.json").read_text())
 
@@ -44,10 +48,34 @@ def compose(site, raw, out, AC, summ, cn):
         for i, s in enumerate(lines): d.text((x0 + 24, y0 + 68 + i * (fs + 16)), s, fill=(255, 255, 255), font=fp)
         return x0, y0, pw, ph
 
-    def to3857(lon, lat):
-        return lon * 20037508.34 / 180, math.log(math.tan((90 + lat) * math.pi / 360)) * 6378137
     # boundary
-    o, d = base("boundary_raw.png", "BOUNDARY"); label(d, pxe(I["boundary"], *I["site_pole"]), AC + " Acres", 54); o.save(out / "Boundary.png")
+    o, d = base("boundary_raw.png", "BOUNDARY"); e = I["boundary"]
+    dm = summ.get("dimensions")
+    if dm:
+        FC = [(255, 61, 0), (0, 229, 255), (255, 214, 0), (213, 0, 249), (118, 255, 3)]
+        for k, f in enumerate(dm["fronts"]):
+            col = FC[k % len(FC)]
+            lines = f["geom"]["coordinates"] if f["geom"]["type"] == "MultiLineString" else [f["geom"]["coordinates"]]
+            for ln in lines:
+                pts = [pxe(e, *to3857(x, y)) for x, y in ln]
+                if len(pts) > 1:
+                    d.line(pts, fill=col, width=12)
+            mid = [pxe(e, *to3857(x, y)) for x, y in lines[0]][len(lines[0]) // 2]
+            t = f"{f['label']} frontage: {f['m']:,} m"
+            d.text((min(max(mid[0] + 16, 10), W - d.textlength(t, font=F(30)) - 10), min(max(mid[1] - 46, B + 10), B + H - 50)), t, fill=col, font=F(30), stroke_width=4, stroke_fill=(0, 0, 0))
+        for key, txt in (("long_line", f"{dm.get('long_span_m', dm['length_m']) / 1000:.2f} km"), ("short_line", f"{dm.get('short_span_m', dm['width_m']) / 1000:.2f} km")):
+            (a1, a2) = [pxe(e, *to3857(x, y)) for x, y in dm[key]]
+            d.line([a1, a2], fill=(255, 255, 255), width=4)
+            for pa, pb in ((a1, a2), (a2, a1)):
+                ang = math.atan2(pb[1] - pa[1], pb[0] - pa[0])
+                for sgn in (1, -1):
+                    d.line([pa, (pa[0] + 30 * math.cos(ang + sgn * 0.45), pa[1] + 30 * math.sin(ang + sgn * 0.45))], fill=(255, 255, 255), width=4)
+            mx, my = a1[0] + (a2[0] - a1[0]) * 0.72, a1[1] + (a2[1] - a1[1]) * 0.72   # label near one end, clear of the acreage label
+            d.text((mx + 14, my - 40), txt, fill=(255, 255, 255), font=F(32), stroke_width=4, stroke_fill=(0, 0, 0))
+        info = [f"Area: {AC} acres", f"Overall extent: {dm['length_m'] / 1000:.2f} km x {dm['width_m'] / 1000:.2f} km", f"Perimeter: {dm['perimeter_m'] / 1000:.2f} km"]
+        info += [f"{f['label']} frontage: {f['m']:,} m" for f in dm["fronts"][:4]] or ["No frontage on a named road"]
+        panel(d, 0, 0, "Site Dimensions", info, 27, right=True, bottom=True)
+    label(d, pxe(e, *I["site_pole"]), AC + " Acres", 54); o.save(out / "Boundary.png")
     # road connectivity
     o, d = base("road_connectivity_raw.png", "ROAD CONNECTIVITY"); e = I["road"]
     qx, qy = pxe(e, *I["site_pole"])
@@ -237,7 +265,7 @@ def build_ppt(site, img, AC, summ, keep, pins=None, hot=None):
     extra = 0
     last_after = {}
     # new slides: government land after ownership (template 9); soil and sensitive land after crop (template 10)
-    for k_, name, anchor in (("summary", "s01b_summary", 1), ("glvmap", "s07b_glvmap", 7), ("govtland", "s09b_govt", 9), ("owners", "s09c_owners", 9),
+    for k_, name, anchor in (("summary", "s01b_summary", 1), ("glvmap", "s07b_glvmap", 7), ("govtland", "s09b_govt", 9), ("owners", "s09c_owners", 9), ("companies", "s09d_company", 9),
                              ("soil", "s11_soil", 10), ("sensitive", "s12_sensitive", 10)):
         if k_ not in keep:
             continue
@@ -298,7 +326,7 @@ def build_ppt(site, img, AC, summ, keep, pins=None, hot=None):
     return len(prs.slides._sldIdLst)
 
 
-OPTIONAL = ("maps", "landcost", "crop", "streetview", "soil", "sensitive", "govtland", "glvmap", "owners", "summary")
+OPTIONAL = ("maps", "landcost", "crop", "streetview", "soil", "sensitive", "govtland", "glvmap", "owners", "companies", "dimensions", "summary")
 
 
 def _included(site, ctx):
@@ -360,9 +388,12 @@ def run(site, ctx):
     has_glvmap = has_maps and on("glvmap") and "glvmap" in summ and (raw / "map_glv.png").exists()
     has_owners = has_maps and on("owners") and "owners" in summ and (raw / "map_holding.png").exists()
     has_summary = on("summary")
+    has_comp = has_maps and on("companies") and (summ.get("companies") or {}).get("n", 0) > 0 and (raw / "map_company.png").exists()
+    if not (on("dimensions") and "dimensions" in summ):
+        summ = {**summ, "dimensions": None}
     keep = {"land"} | ({"location", "boundary", "road", "village", "ownership"} if has_maps else set()) | ({"glv"} if has_cost else set()) \
         | ({"crop"} if has_crop and has_maps else set()) | ({"streetview"} if has_sv else set())         | ({"soil"} if has_soil else set()) | ({"sensitive"} if has_sens else set()) | ({"govtland"} if has_govt else set()) \
-        | ({"glvmap"} if has_glvmap else set()) | ({"owners"} if has_owners else set()) | ({"summary"} if has_summary else set())
+        | ({"glvmap"} if has_glvmap else set()) | ({"owners"} if has_owners else set()) | ({"summary"} if has_summary else set()) | ({"companies"} if has_comp else set())
     if not has_cost:
         summ = {**summ, "landcost": {k: {**ZERO_COST, "total_acre": 1.0} for k in ("C1", "C2")}}
     if not has_crop:
@@ -381,11 +412,13 @@ def run(site, ctx):
         data["glvmap"] = summ["glvmap"]
     if has_owners:
         data["owners"] = summ["owners"]
+    if has_comp:
+        data["companies"] = summ["companies"]
     if has_summary:
         data["exec"] = exec_data(summ, data, on)
     pins = hot = None
     if has_maps:
-        for f in ("map_village.png", "map_owner.png", "map_crop.png", "map_soil.png", "map_sensitive.png", "map_govt.png", "map_glv.png", "map_holding.png"):
+        for f in ("map_village.png", "map_owner.png", "map_crop.png", "map_soil.png", "map_sensitive.png", "map_govt.png", "map_glv.png", "map_holding.png", "map_company.png"):
             if (raw / f).exists():
                 shutil.copy(raw / f, out / f)
         cn = json.loads((site.work / "connectivity.json").read_text(encoding="utf-8"))
@@ -405,7 +438,8 @@ def run(site, ctx):
     db.register_document(site.site_id, "ppt", site.ppt)
     db.save_summary(site.site_id, {"ppt_included": _included(site, ctx)})
     left = [k for k, s_ in (("location / boundary / road / village / ownership slides", "maps"), ("GLV + land cost slide", "landcost"),
-                            ("crop slide", "crop"), ("street view", "streetview"), ("soil slide", "soil"), ("sensitive land slide", "sensitive"), ("government land slide", "govtland"), ("GLV map", "glvmap"), ("patta holdings", "owners"), ("executive summary", "summary")) if not on(s_)]
+                            ("crop slide", "crop"), ("street view", "streetview"), ("soil slide", "soil"), ("sensitive land slide", "sensitive"), ("government land slide", "govtland"), ("GLV map", "glvmap"), ("patta holdings", "owners"), ("company ownership", "companies"),
+                            ("boundary dimensions", "dimensions"), ("executive summary", "summary")) if not on(s_)]
     return f"{site.ppt.name}: {n} slides, {AC} acres" + (f"; left out: {', '.join(left)}" if left else "") + " (PDF only after you confirm the slides)"
 
 

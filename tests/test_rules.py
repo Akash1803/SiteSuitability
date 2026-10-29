@@ -58,3 +58,12 @@ def test_dependents_crop_only_touches_maps_and_ppt():
     assert {"maps", "ppt"} <= dc and not dc & {"clip", "areg", "glv", "master", "landcost", "fmb"}
     assert dependents("parcels") >= {"clip", "areg", "glv", "master", "crop", "landcost", "fmb", "maps", "ppt"}
     assert "fmb" not in dependents("glv")
+
+
+def test_company_detection_on_tamil_owner_names():
+    from sitesuit.stages.companies import kind
+    assert kind("ஸ்பிரிட் ரியல்டார்ஸ் பிரைவேட் லிமிடெட்") == ("Company", "Realtors")
+    assert kind("கிரேட் லேக் பிரமோட்டர்ஸ் அண்டு ரியல்டார்ஸ் பி லி")[0] == "Company"
+    assert kind("பின்ஜரபோல் டிரஸ்ட் சென்னை") == ("Institution", "Trust")
+    assert kind("ஆர்ச் பிஷப் மதராஸ் டயோசிஸ்") == ("Institution", "Diocese / church")
+    assert kind("ராஜதுரை நாடார் மகன் ஆர்கஜேந்திரன்") == (None, None)

@@ -198,11 +198,58 @@ for big, small, sub in ((f2(A), "acres", "Total Area"), (f2(ns), f"acres · {ns/
 html += f'</div><div class="bar"><div style="width:{ns/A*100:.2f}%;background:#bdbdbd;color:#333">No Survey Data {ns/A*100:.2f}%</div><div style="width:{nc/A*100:.2f}%;background:#f5c242;color:#333">Non-crop {nc/A*100:.2f}%</div><div style="width:{cl/A*100:.2f}%;background:#2ecc71;color:#fff">Crop {cl/A*100:.2f}%</div></div></div></div>'
 shot(html + END, "s10_crop")
 
+# ---------------- 6. SOIL + LAND QUALITY (A-register) ----------------
+EXTRA = []
+if d.get("soil"):
+    so = d["soil"]; cols = d.get("tharam_colors", {})
+    html = BASE + css3 + '<div class="title">SOIL &amp; LAND QUALITY (A-REGISTER)</div><div class="body"><div class="map"><img src="map_soil.png"></div><div class="panel"><h3>LAND GRADE (THARAM) – AREA (ACRES)</h3><div class="hdr"><span>Tharam · assessment</span><span>Area (acres)</span></div>'
+    rows_ = so["tharam"][:5]
+    if len(so["tharam"]) > 5:   # fold the small grades into one row
+        rest = so["tharam"][5:]
+        rows_ = rows_ + [{"label": "Other grades", "acre": sum(t["acre"] for t in rest), "n": sum(t["n"] for t in rest), "rate": "-"}]
+    for t in rows_:
+        p_ = t["acre"] / A * 100; c_ = cols.get(t["label"], "#9e9e9e")
+        html += (f'<div class="vrow" style="padding-top:18px"><div class="nm" style="font-size:42px"><span class="l"><span class="dot" style="background:{c_}"></span>{t["label"]}</span><span>{f2(t["acre"])}</span></div>'
+                 f'<div class="tr"><div style="width:{p_:.1f}%;background:{c_}"></div></div><div class="p">{pct(p_)} of total area · assessment {t["rate"]} · {t["n"]} subdivisions</div></div>')
+    html += '<div style="margin-top:auto;padding:22px 50px;font-size:26px;color:#555;line-height:1.3;border-top:2px solid #e3e8ee">Tharam = settlement grade recorded in the A-register; assessment = land revenue rate per hectare fixed at settlement (higher = land rated more productive).</div></div></div>'
+    irr = so.get("irrigation", {}); irr_txt = ", ".join(f"{k} {f2(v)}" for k, v in sorted(irr.items(), key=lambda kv: -kv[1])[:2])
+    html += '<div class="cov"><div class="lab">LAND QUALITY<br>SUMMARY</div><div class="stats"><div class="row">'
+    top = so["tharam"][0] if so["tharam"] else {"label": "-", "acre": 0}
+    for big, small, sub in ((f2(A), "acres", "Total Area"), (f"{so['assessment_wavg']:.2f}", "Rs / ha", "Mean assessment (patta land)"),
+                            (f2(top["acre"]), f"acres · {top['acre'] / A * 100:.1f}%", f"{top['label']} (largest)"), (str(so["classes"]), "codes", "Soil class-sort codes")):
+        html += f'<div><div class="big">{big} <small>{small}</small></div><div class="sub">{sub}</div></div>'
+    html += '</div><div class="bar">' + "".join(f'<div style="width:{t["acre"] / A * 100:.2f}%;background:{cols.get(t["label"], "#9e9e9e")}"></div>' for t in so["tharam"]) + '</div>'
+    if [k for k in irr if k != "Not recorded"]:
+        html += f'<div class="sub" style="margin-top:12px">Irrigation source (A-register): {irr_txt}</div>'
+    html += '</div></div>'
+    shot(html + END, "s11_soil"); EXTRA.append("s11_soil")
+
+# ---------------- 7. SENSITIVE LAND ----------------
+SENS_C = {"Water body": "#1e88e5", "Channel": "#00acc1", "Temple/Church/Mosque": "#8e24aa", "Burial": "#5d4037", "Village site": "#f4511e", "Forest": "#2e7d32",
+          "NH land": "#fdd835", "Well": "#4fc3f7", "Other government poramboke": "#9e9e9e"}
+if d.get("sensitive"):
+    se = d["sensitive"]; rows = se["rows"]; tot = se["sensitive_acre"]
+    html = BASE + css3 + '<div class="title">SENSITIVE LAND INSIDE THE SITE</div><div class="body"><div class="map"><img src="map_sensitive.png"></div><div class="panel"><h3>SENSITIVE LAND – AREA (ACRES)</h3><div class="hdr"><span>Category (A-register remarks)</span><span>Area (acres)</span></div>'
+    for r in rows:
+        p_ = r["acre"] / A * 100; c_ = SENS_C.get(r["category"], "#9e9e9e")
+        html += (f'<div class="vrow" style="padding-top:24px"><div class="nm" style="font-size:44px"><span class="l"><span class="dot" style="background:{c_}"></span>{r["category"]}</span><span>{f2(r["acre"])}</span></div>'
+                 f'<div class="tr"><div style="width:{max(p_, 0.6):.1f}%;background:{c_}"></div></div><div class="p">{pct(p_)} · {r["subdivisions"]} subdivisions · survey {r["surveys"]}</div></div>')
+    if not rows:
+        html += '<div style="padding:50px;font-size:40px">No sensitive remarks in the A-register for this site.</div>'
+    html += '</div></div><div class="cov"><div class="lab">SENSITIVE<br>LAND</div><div class="stats"><div class="row">'
+    big_r = max(rows, key=lambda r: r["acre"]) if rows else {"category": "-", "acre": 0}
+    for big, small, sub in ((f2(A), "acres", "Total Area"), (f2(tot), f"acres · {tot / A * 100:.2f}%", "Flagged land"), (str(len(rows)), "", "Categories"),
+                            (f2(big_r["acre"]), "acres", f"{big_r['category']} (largest)")):
+        html += f'<div><div class="big">{big} <small>{small}</small></div><div class="sub">{sub}</div></div>'
+    html += f'</div><div class="bar"><div style="width:{100 - tot / A * 100:.2f}%;background:#b0bec5;color:#0f3b5a">Rest of site {100 - tot / A * 100:.2f}%</div>' + "".join(
+        f'<div style="width:{r["acre"] / A * 100:.2f}%;background:{SENS_C.get(r["category"], "#9e9e9e")}"></div>' for r in rows) + '</div></div></div>'
+    shot(html + END, "s12_sensitive"); EXTRA.append("s12_sensitive")
+
 # ---------------- screenshots ----------------
 from selenium import webdriver
 o = webdriver.ChromeOptions(); o.add_argument("--headless=new"); o.add_argument("--window-size=3240,2250"); o.add_argument("--force-device-scale-factor=1"); o.add_argument("--hide-scrollbars")
 drv = webdriver.Chrome(options=o)
-for n in ("s06_land_summary", "s07_glv_summary", "s08_villagewise", "s09_ownership", "s10_crop"):
+for n in ("s06_land_summary", "s07_glv_summary", "s08_villagewise", "s09_ownership", "s10_crop", *EXTRA):
     drv.get("file:///" + os.path.abspath(f"{D}/{n}.html").replace("\\", "/")); time.sleep(2.5)
     iw, ih = drv.execute_script("return [window.innerWidth, window.innerHeight]")
     if (iw, ih) != (3240, 2250):

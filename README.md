@@ -13,9 +13,13 @@ Pick a site boundary, press **Run**, get the full preliminary site analysis:
 | 7 | Tentative land cost | team template (RFCTLARR conditions 1 / 2) | `10_Excel/*_Tentative_Land_Cost_GLV.xlsx` |
 | 8 | Latest FMB sheets | collabland FMB portal (team downloader) | `09_FMB_Latest/<village>/<survey>/<survey>.pdf` |
 | 9 | Connectivity + maps | OpenStreetMap (Overpass), PyQGIS | `_work/render/*` |
-| 10 | Slides + PPT | deck template | `07_PPT_Maps/*.png`, `08_Output/*_Preliminary_Site_Analysis_PPT.pptx` |
+| 10 | Street view points | road network + Google Maps links (photos: your pin_<n>.png or Static API with a company key) | Street View slide + hidden photo slides |
+| 11 | Soil + land quality slide | A-register settlement fields (soil class / sort / tharam, assessment Rs/ha, irrigation source) | `Soil_Land_Quality` sheet, soil map + slide |
+| 12 | Sensitive land slide | A-register remarks (water body, channel, temple, burial, village site, forest, NH land, well) + govt poramboke | sensitive-land map + slide |
+| 13 | Slides + PPT | deck template | `07_PPT_Maps/*.png`, `08_Output/*_Preliminary_Site_Analysis_PPT.pptx` |
 
 The PDF is made only after the PPT is confirmed (button in the app / `cli pdf`).
+Untick a stage and its slides leave the PPT; changing ticks after a run rebuilds only what depends on them.
 
 ## Rules built in
 - **Area**: full surveys use the A-register extent; surveys the boundary cuts use only the area inside the boundary (CLIP and A-register still run on the whole survey).

@@ -17,7 +17,10 @@ from ..util import GOVT, HA_TO_ACRE, split_vcode, survey_sort_key, vcode
 NAME, TITLE = "areg", "A-register (Tamilnilam)"
 API = "https://www.tnagrisnet.tn.gov.in/RES/landdetail/index/{d}/{t}/{v}/{s}/{sd}"
 FIELDS = [("pattaNo", "patta_number"), ("GovtPri", "government_priority"), ("extHect", "extent_hectares"), ("extAres", "extent_ares"),
-          ("landTypeEng", "land_type_english"), ("Poramboke", "poramboke"), ("cultivable", "cultivable"), ("remarks", "remarks"), ("remarks1", "remarks1")]
+          ("landTypeEng", "land_type_english"), ("Poramboke", "poramboke"), ("cultivable", "cultivable"), ("remarks", "remarks"), ("remarks1", "remarks1"),
+          # land-quality fields of the settlement register (soil class / sort / tharam codes, assessment Rs per hectare, irrigation source)
+          ("soilTypPri", "soil_class"), ("soilTypSec", "soil_sort"), ("soilClass", "tharam"), ("taxHect", "assessment_rs_ha"), ("IrrSource", "irrigation_source")]
+SOIL_KEYS = ("soil_class", "soil_sort", "tharam", "assessment_rs_ha", "irrigation_source")
 SENSITIVE = [("Forest", "காடு|வனம்|forest"), ("Water body", "ஏரி|குளம்|கண்மாய்|ஊரணி|குட்டை|தாங்கல்|tank|pond"),
              ("Channel", "வாய்க்கால்|ஓடை|ஒடை|odai"), ("Temple/Church/Mosque", "கோயில்|கோவில்|ஆலயம்|மசூதி|தேவாலய|temple|church|mosque"),
              ("Burial", "சுடுகாடு|மயான|இடுகாடு|burial"), ("Village site", "நத்தம்|village site"), ("NH land", "நெடுஞ்சாலை|highway"), ("Well", "well|கிணறு")]

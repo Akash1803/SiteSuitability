@@ -159,7 +159,10 @@ def compose_streetview(raw, out, AC, pins, info):
     lines = [f"{p['n']}. {p['label']}" + (f" ({p['date']})" if p.get("date") else "") for p in pins]
     any_photo = any(p.get("photo") for p in pins)
     lines.append("Click a pin to view " + ("the site photo" if any_photo else "the spot in Google Street View"))
-    fp = F(28); pw = max(d.textlength(s_, font=fp) for s_ in lines) + 48; ph = len(lines) * 42 + 70; x0, y0 = W - pw - 24, B + 24
+    fp = F(28); pw = max(d.textlength(s_, font=fp) for s_ in lines) + 48; ph = len(lines) * 42 + 70
+    corners = [(W - pw - 24, B + 24), (24, B + 24), (24, B + H - ph - 24), (W - pw - 24, B + H - ph - 24)]
+    clash = lambda c: sum(1 for h in hot if c[0] - 40 < h["x"] + 40 < c[0] + pw + 40 and c[1] - 20 < h["y"] + 124 < c[1] + ph + 140)
+    x0, y0 = min(corners, key=clash)      # the corner with no pin under the legend
     d.rectangle([x0, y0, x0 + pw, y0 + ph], fill=(16, 58, 78), outline=(255, 255, 255), width=2)
     d.text((x0 + 24, y0 + 12), "Street view points", fill=(255, 235, 0), font=F(32))
     for k, s_ in enumerate(lines):
@@ -203,6 +206,17 @@ def build_ppt(site, img, AC, summ, keep, pins=None, hot=None):
         sl.part.related_part(pics[0]._element.blipFill.blip.rEmbed)._blob = (img / f"{name}.png").read_bytes()
     drop = [n for n, k in key_of.items() if k not in keep]
     photo_slides = slides[11:15]
+    ids_ = prs.slides._sldIdLst; pos = 10      # right after template slide 10 (crop)
+    extra = sum(1 for k_ in ("soil", "sensitive") if k_ in keep)
+    for k_, name in (("soil", "s11_soil"), ("sensitive", "s12_sensitive")):
+        if k_ not in keep:
+            continue
+        ns = prs.slides.add_slide(slides[9].slide_layout)
+        for ph in list(ns.placeholders):
+            ph._element.getparent().remove(ph._element)
+        ns.shapes.add_picture(str(img / f"{name}.png"), 0, 0, prs.slide_width, prs.slide_height)
+        el = ids_[-1]; ids_.remove(el); ids_.insert(pos, el); pos += 1
+        drop = [n + 1 if n >= pos else n for n in drop]   # template slides after the insert move down by one
     if "streetview" in keep and pins:
         sv = slides[4]; k = prs.slide_width / W
         by_n = {h["n"]: h for h in hot}
@@ -226,9 +240,9 @@ def build_ppt(site, img, AC, summ, keep, pins=None, hot=None):
                         x.click_action.target_slide = sv
             else:
                 shp.click_action.hyperlink.address = p["url"]
-        drop += [12 + i - 1 for i in range(1, 5) if not next((q for q in pins if q["n"] == i and q.get("photo")), None)]
+        drop += [12 + i - 1 + extra for i in range(1, 5) if not next((q for q in pins if q["n"] == i and q.get("photo")), None)]
     else:
-        drop += [12, 13, 14, 15]
+        drop += [12 + extra, 13 + extra, 14 + extra, 15 + extra]
     vs = [v["village"] for v in summ["villages"]]; tl = list(dict.fromkeys(v["taluk"] for v in summ["villages"])); ds = list(dict.fromkeys(v["district"] for v in summ["villages"]))
     tb = [sh for sh in slides[0].shapes if sh.has_text_frame and "Preliminary" in sh.text_frame.text][0]
     p0, p2 = tb.text_frame.paragraphs[0], tb.text_frame.paragraphs[2]
@@ -252,7 +266,7 @@ def build_ppt(site, img, AC, summ, keep, pins=None, hot=None):
     return len(prs.slides._sldIdLst)
 
 
-OPTIONAL = ("maps", "landcost", "crop", "streetview")
+OPTIONAL = ("maps", "landcost", "crop", "streetview", "soil", "sensitive")
 
 
 def _included(site, ctx):
@@ -280,18 +294,27 @@ def run(site, ctx):
     has_cost = on("landcost") and "landcost" in summ
     has_crop = on("crop") and "crop" in summ
     has_sv = has_maps and on("streetview") and (site.work / "streetview.json").exists()
+    has_soil = has_maps and on("soil") and "soil" in summ and (raw / "map_soil.png").exists()
+    has_sens = has_maps and on("sensitive") and "sensitive" in summ and (raw / "map_sensitive.png").exists()
     keep = {"land"} | ({"location", "boundary", "road", "village", "ownership"} if has_maps else set()) | ({"glv"} if has_cost else set()) \
-        | ({"crop"} if has_crop and has_maps else set()) | ({"streetview"} if has_sv else set())
+        | ({"crop"} if has_crop and has_maps else set()) | ({"streetview"} if has_sv else set())         | ({"soil"} if has_soil else set()) | ({"sensitive"} if has_sens else set())
     if not has_cost:
         summ = {**summ, "landcost": {k: {**ZERO_COST, "total_acre": 1.0} for k in ("C1", "C2")}}
     if not has_crop:
         summ = {**summ, "crop": None}
     data = slide_data(site, summ)
     AC = f"{data['total']:.2f}"
+    if has_soil:
+        data["soil"] = summ["soil"]
+        sc_ = raw / "_soil_colors.json"
+        data["tharam_colors"] = json.loads(sc_.read_text())["tharam_colors"] if sc_.exists() else {}
+    if has_sens:
+        data["sensitive"] = summ["sensitive"]
     pins = hot = None
     if has_maps:
-        for f in ("map_village.png", "map_owner.png", "map_crop.png"):
-            shutil.copy(raw / f, out / f)
+        for f in ("map_village.png", "map_owner.png", "map_crop.png", "map_soil.png", "map_sensitive.png"):
+            if (raw / f).exists():
+                shutil.copy(raw / f, out / f)
         cn = json.loads((site.work / "connectivity.json").read_text(encoding="utf-8"))
         compose(site, raw, out, AC, summ, cn)
         if has_sv:
@@ -309,7 +332,7 @@ def run(site, ctx):
     db.register_document(site.site_id, "ppt", site.ppt)
     db.save_summary(site.site_id, {"ppt_included": _included(site, ctx)})
     left = [k for k, s_ in (("location / boundary / road / village / ownership slides", "maps"), ("GLV + land cost slide", "landcost"),
-                            ("crop slide", "crop"), ("street view", "streetview")) if not on(s_)]
+                            ("crop slide", "crop"), ("street view", "streetview"), ("soil slide", "soil"), ("sensitive land slide", "sensitive")) if not on(s_)]
     return f"{site.ppt.name}: {n} slides, {AC} acres" + (f"; left out: {', '.join(left)}" if left else "") + " (PDF only after you confirm the slides)"
 
 

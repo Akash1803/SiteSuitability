@@ -17,6 +17,8 @@ from ..config import SETTINGS
 NAME, TITLE = "streetview", "Street view points"
 RANK = {"motorway": 0, "trunk": 0, "primary": 1, "secondary": 2, "tertiary": 3, "unclassified": 4}
 MAX_PINS, NEAR_M, STEP_M = 4, 150, 40
+KIND = {"motorway": "Expressway", "trunk": "National highway", "primary": "State highway", "secondary": "District road",
+        "tertiary": "Village road", "unclassified": "Village road (unnamed)"}
 
 
 def pick_points(geom, roads, U, n=MAX_PINS):
@@ -32,7 +34,7 @@ def pick_points(geom, roads, U, n=MAX_PINS):
             p = g.interpolate(d)
             dist = p.distance(b)
             if dist <= NEAR_M:
-                cand.append((RANK.get(row.highway, 5), dist, p, row.name if isinstance(row.name, str) else (row.ref if isinstance(row.ref, str) else row.highway)))
+                cand.append((RANK.get(row.highway, 5), dist, p, row.name if isinstance(row.name, str) else (row.ref if isinstance(row.ref, str) else KIND.get(row.highway, "Road"))))
     if not cand:
         return []
     best_rank = min(c[0] for c in cand)

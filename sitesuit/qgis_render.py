@@ -57,33 +57,35 @@ def idlist(ids):
 
 
 info = {}
-bw = nofill(QgsVectorLayer(A["boundary"], "b", "ogr"), "#ffffff", 0.8)
-info["boundary"] = render([bw, sat], fit(bb, 1.30), "boundary_raw.png")
-# road connectivity
-C = A["conn"]
-rail = QgsVectorLayer(C + "|layername=rail", "rail", "ogr")
-rs = QgsLineSymbol.createSimple({"color": "#ffffff", "width": "1.3"})
-rs.appendSymbolLayer(QgsSimpleLineSymbolLayer.create({"color": "#222222", "width": "0.8", "customdash": "6;6", "use_custom_dash": "1"}))
-rail.setRenderer(QgsSingleSymbolRenderer(rs))
-mdr = QgsVectorLayer(C + "|layername=roads", "mdr", "ogr"); mdr.setSubsetString(f"osm_id IN ({idlist(A['road_ids'])})")
-mdr.setRenderer(QgsSingleSymbolRenderer(QgsLineSymbol.createSimple({"color": "#d4ff00", "width": "1.4"}))); lab(mdr, '"name"', 11, "#ffffff")
-vr = QgsVectorLayer(C + "|layername=roads", "vr", "ogr"); vr.setSubsetString(f"osm_id IN ({idlist(A['village_road_ids'])})")
-vr.setRenderer(QgsSingleSymbolRenderer(QgsLineSymbol.createSimple({"color": "#ff1a1a", "width": "1.1"}))); lab(vr, '"name"', 11, "#ffff00")
-rb = QgsRectangle(bb); rb.grow(max(1500, bb.width() * 0.4)); info["road"] = render([bw, vr, mdr, rail, sat], fit(rb, 1.0), "road_connectivity_raw.png")
-pole = g.poleOfInaccessibility(5)[0].asPoint(); sc = g.centroid().asPoint()
-info.update(site_c=[sc.x(), sc.y()], site_pole=[pole.x(), pole.y()])
-# region / location
-tal = nofill(QgsVectorLayer(A["admin"] + "|layername=taluk", "t", "ogr"), "#ffffff", 0.45)
-dist = nofill(QgsVectorLayer(A["admin"] + "|layername=district", "d", "ogr"), "#3fb6ff", 1.3)
-rg = QgsRectangle(bb); rg.grow(14000); ext = fit(rg, 1.0)
-render([dist, tal, sat], ext, "region_raw.png", 120, 2)
-lbl = {}
-for f in dist.getFeatures():
-    gg = QgsGeometry(f.geometry()); gg.transform(QgsCoordinateTransform(dist.crs(), WEB, P)); vis = gg.intersection(QgsGeometry.fromRect(ext))
-    if vis.isEmpty() or vis.area() < ext.width() * ext.height() * 0.03:
-        continue
-    pt = vis.poleOfInaccessibility(200)[0].asPoint(); lbl[f["district"]] = [pt.x(), pt.y()]
-info["region"] = {"ext": [ext.xMinimum(), ext.yMinimum(), ext.xMaximum(), ext.yMaximum()], "site_c": [sc.x(), sc.y()], "dlab": lbl}
+ONLY = set(A.get("only") or [])
+if not ONLY:
+    bw = nofill(QgsVectorLayer(A["boundary"], "b", "ogr"), "#ffffff", 0.8)
+    info["boundary"] = render([bw, sat], fit(bb, 1.30), "boundary_raw.png")
+    # road connectivity
+    C = A["conn"]
+    rail = QgsVectorLayer(C + "|layername=rail", "rail", "ogr")
+    rs = QgsLineSymbol.createSimple({"color": "#ffffff", "width": "1.3"})
+    rs.appendSymbolLayer(QgsSimpleLineSymbolLayer.create({"color": "#222222", "width": "0.8", "customdash": "6;6", "use_custom_dash": "1"}))
+    rail.setRenderer(QgsSingleSymbolRenderer(rs))
+    mdr = QgsVectorLayer(C + "|layername=roads", "mdr", "ogr"); mdr.setSubsetString(f"osm_id IN ({idlist(A['road_ids'])})")
+    mdr.setRenderer(QgsSingleSymbolRenderer(QgsLineSymbol.createSimple({"color": "#d4ff00", "width": "1.4"}))); lab(mdr, '"name"', 11, "#ffffff")
+    vr = QgsVectorLayer(C + "|layername=roads", "vr", "ogr"); vr.setSubsetString(f"osm_id IN ({idlist(A['village_road_ids'])})")
+    vr.setRenderer(QgsSingleSymbolRenderer(QgsLineSymbol.createSimple({"color": "#ff1a1a", "width": "1.1"}))); lab(vr, '"name"', 11, "#ffff00")
+    rb = QgsRectangle(bb); rb.grow(max(1500, bb.width() * 0.4)); info["road"] = render([bw, vr, mdr, rail, sat], fit(rb, 1.0), "road_connectivity_raw.png")
+    pole = g.poleOfInaccessibility(5)[0].asPoint(); sc = g.centroid().asPoint()
+    info.update(site_c=[sc.x(), sc.y()], site_pole=[pole.x(), pole.y()])
+    # region / location
+    tal = nofill(QgsVectorLayer(A["admin"] + "|layername=taluk", "t", "ogr"), "#ffffff", 0.45)
+    dist = nofill(QgsVectorLayer(A["admin"] + "|layername=district", "d", "ogr"), "#3fb6ff", 1.3)
+    rg = QgsRectangle(bb); rg.grow(14000); ext = fit(rg, 1.0)
+    render([dist, tal, sat], ext, "region_raw.png", 120, 2)
+    lbl = {}
+    for f in dist.getFeatures():
+        gg = QgsGeometry(f.geometry()); gg.transform(QgsCoordinateTransform(dist.crs(), WEB, P)); vis = gg.intersection(QgsGeometry.fromRect(ext))
+        if vis.isEmpty() or vis.area() < ext.width() * ext.height() * 0.03:
+            continue
+        pt = vis.poleOfInaccessibility(200)[0].asPoint(); lbl[f["district"]] = [pt.x(), pt.y()]
+    info["region"] = {"ext": [ext.xMinimum(), ext.yMinimum(), ext.xMaximum(), ext.yMaximum()], "site_c": [sc.x(), sc.y()], "dlab": lbl}
 # thematic maps for the HTML slides (UTM, 2120 x 1555)
 MW, MH = 2120, 1555
 utm = QgsCoordinateReferenceSystem(f"EPSG:{A['utm']}")
@@ -101,11 +103,13 @@ for (v, s), gs in sg.items():
     ft = QgsFeature(svm.fields()); ft.setAttribute("survey_no", s); ft.setGeometry(QgsGeometry.unaryUnion(gs)); spr.addFeature(ft)
 svm.updateExtents(); svm.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({"color": "0,0,0,0", "outline_color": "#1a3a5c", "outline_width": "0.5"})))
 lab(svm, '"survey_no"', 6.5, "#ffffff", False, "#1a3a5c")
-render([svm, pv, red(), sat], mext, "map_village.png", 150, 1, MW, MH, utm)
+if not ONLY or "map_village" in ONLY:
+    render([svm, pv, red(), sat], mext, "map_village.png", 150, 1, MW, MH, utm)
 po = QgsVectorLayer(PAR, "po", "ogr")
 po.setRenderer(QgsCategorizedSymbolRenderer("ownership", [QgsRendererCategory("Patta", QgsFillSymbol.createSimple({"color": rgba("#f5c242", 208), "outline_color": "#555555", "outline_width": "0.2"}), "Patta"),
                                                           QgsRendererCategory("Govt", QgsFillSymbol.createSimple({"color": rgba("#2ecc71", 208), "outline_color": "#555555", "outline_width": "0.2"}), "Govt")]))
-render([po, red(), sat], mext, "map_owner.png", 150, 1, MW, MH, utm)
+if not ONLY or "map_owner" in ONLY:
+    render([po, red(), sat], mext, "map_owner.png", 150, 1, MW, MH, utm)
 pc = QgsVectorLayer(PAR, "pc", "ogr")
 if pc.fields().indexOf("crop_group") >= 0:
     pc.addExpressionField("CASE WHEN \"crop_group\" = 'Cultivated' THEN 'Crop Land' WHEN \"crop_group\" = 'No crop survey record' THEN 'No Survey Data' ELSE 'Non-crop Land' END", QgsField("crop_cls", QVariant.String))
@@ -115,7 +119,28 @@ pc.setRenderer(QgsCategorizedSymbolRenderer("crop_cls", [
     QgsRendererCategory("Crop Land", QgsFillSymbol.createSimple({"color": "46,204,113,208", "outline_color": "#555555", "outline_width": "0.2"}), "Crop Land"),
     QgsRendererCategory("Non-crop Land", QgsFillSymbol.createSimple({"color": "245,194,66,208", "outline_color": "#555555", "outline_width": "0.2"}), "Non-crop Land"),
     QgsRendererCategory("No Survey Data", QgsFillSymbol.createSimple({"color": "224,224,224,208", "outline_color": "#555555", "outline_width": "0.2"}), "No Survey Data")]))
-render([pc, red(), sat], mext, "map_crop.png", 150, 1, MW, MH, utm)
-json.dump(info, open(OUT + "/_render_info.json", "w"))
-print("rendered", list(lbl))
+if not ONLY or "map_crop" in ONLY:
+    render([pc, red(), sat], mext, "map_crop.png", 150, 1, MW, MH, utm)
+SOIL_COLORS = ["#1b5e20", "#43a047", "#9ccc65", "#d4e157", "#ffee58", "#ffca28", "#ffa726", "#ff7043", "#e53935", "#8d6e63", "#90a4ae"]
+if "map_soil" in ONLY:
+    ps = QgsVectorLayer(PAR, "ps", "ogr")
+    vals = sorted({f["tharam_label"] for f in ps.getFeatures() if f["tharam_label"]}, key=lambda v: (not v.startswith("Tharam"), int(v.split()[-1]) if v.split()[-1].isdigit() else 99))
+    cats = [QgsRendererCategory(v, QgsFillSymbol.createSimple({"color": rgba("#bdbdbd" if not v.startswith("Tharam") else SOIL_COLORS[k % len(SOIL_COLORS)], 210), "outline_color": "#444444", "outline_width": "0.2"}), v)
+            for k, v in enumerate(vals)]
+    ps.setRenderer(QgsCategorizedSymbolRenderer("tharam_label", cats))
+    render([ps, red(), sat], mext, "map_soil.png", 150, 1, MW, MH, utm)
+    json.dump({"tharam_colors": {v: ("#bdbdbd" if not v.startswith("Tharam") else SOIL_COLORS[k % len(SOIL_COLORS)]) for k, v in enumerate(vals)}}, open(OUT + "/_soil_colors.json", "w"))
+SENS = {"Water body": "#1e88e5", "Channel": "#00acc1", "Temple/Church/Mosque": "#8e24aa", "Burial": "#5d4037", "Village site": "#f4511e", "Forest": "#2e7d32",
+        "NH land": "#fdd835", "Well": "#4fc3f7", "Other government poramboke": "#9e9e9e"}
+if "map_sensitive" in ONLY:
+    base = QgsVectorLayer(PAR, "base", "ogr")
+    base.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({"color": "255,255,255,40", "outline_color": "#ffffff", "outline_width": "0.15"})))
+    se = QgsVectorLayer(PAR, "se", "ogr"); se.setSubsetString("\"sensitive_cat\" <> ''")
+    se.setRenderer(QgsCategorizedSymbolRenderer("sensitive_cat", [QgsRendererCategory(k, QgsFillSymbol.createSimple({"color": rgba(c, 225), "outline_color": "#000000", "outline_width": "0.3"}), k) for k, c in SENS.items()]))
+    render([se, base, red(), sat], mext, "map_sensitive.png", 150, 1, MW, MH, utm)
+if ONLY:
+    json.dump({"only": sorted(ONLY)}, open(OUT + "/_render_only.json", "w"))
+else:
+    json.dump(info, open(OUT + "/_render_info.json", "w"))
+print("rendered", sorted(ONLY) or "all")
 app.exitQgis()

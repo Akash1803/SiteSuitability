@@ -153,14 +153,25 @@ def run(site, ctx):
     raw = site.work / "render"; raw.mkdir(exist_ok=True)
     params = {"out_dir": str(raw), "boundary": str(site.boundary), "parcels": str(site.subdivisions), "conn": str(conn), "admin": str(admin), "utm": U,
               "road_ids": cn["road_ids"], "village_road_ids": cn["village_road_ids"], "village_colors": {v: PALETTE[i % len(PALETTE)] for i, v in enumerate(vills)}}
-    pj = site.work / "render_params.json"; pj.write_text(json.dumps(params), encoding="utf-8")
-    if not SETTINGS.qgis_python.exists():
-        raise RuntimeError(f"QGIS python not found: {SETTINGS.qgis_python} (set QGIS_PYTHON in .env)")
-    ctx.log("rendering satellite maps with QGIS (about 1 minute) ...")
-    script = Path(__file__).resolve().parent.parent / "qgis_render.py"
-    (raw / "_render_info.json").unlink(missing_ok=True)
-    p = subprocess.run(["cmd", "/c", str(SETTINGS.qgis_python), str(script), str(pj)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
-    if not (raw / "_render_info.json").exists():   # QGIS may exit non-zero on shutdown after a good render
-        raise RuntimeError("QGIS render failed: " + (p.stderr or p.stdout)[-800:])
+    (site.work / "render_params.json").write_text(json.dumps(params), encoding="utf-8")
+    qgis_render(site, ctx)
     db.save_summary(site.site_id, {"connectivity": {k: v for k, v in cn.items() if k not in ("road_ids", "village_road_ids")}, "village_colors": params["village_colors"]})
     return "; ".join(cn["lines"][:6])
+
+
+def qgis_render(site, ctx, only=None):
+    """run the standalone PyQGIS renderer; only = list of thematic maps (e.g. ['map_soil']) to render just those"""
+    if not SETTINGS.qgis_python.exists():
+        raise RuntimeError(f"QGIS python not found: {SETTINGS.qgis_python} (set QGIS_PYTHON in .env)")
+    src = site.work / "render_params.json"
+    if not src.exists():
+        raise RuntimeError("run the 'Connectivity + map renders' stage first")
+    params = json.loads(src.read_text(encoding="utf-8")); raw = Path(params["out_dir"])
+    params["parcels"] = str(site.subdivisions); params["only"] = only or []
+    pj = site.work / ("render_params_only.json" if only else "render_params.json"); pj.write_text(json.dumps(params), encoding="utf-8")
+    flag = raw / ("_render_only.json" if only else "_render_info.json"); flag.unlink(missing_ok=True)
+    ctx.log(f"rendering {'+'.join(only) if only else 'satellite maps'} with QGIS ...")
+    script = Path(__file__).resolve().parent.parent / "qgis_render.py"
+    p = subprocess.run(["cmd", "/c", str(SETTINGS.qgis_python), str(script), str(pj)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
+    if not flag.exists():   # QGIS may exit non-zero on shutdown after a good render
+        raise RuntimeError("QGIS render failed: " + (p.stderr or p.stdout)[-800:])

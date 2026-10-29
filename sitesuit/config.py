@@ -26,6 +26,7 @@ class Settings:
     fmb_downloader: Path = Path(_get("FMB_DOWNLOADER", r"D:\code\FMB_Downloader\fetch_fmb_gui (1).py"))
     fmb_cookie: str = _get("FMB_COOKIE")
     overpass_url: str = _get("OVERPASS_URL", "https://maps.mail.ru/osm/tools/overpass/api/interpreter")
+    google_maps_key: str = _get("GOOGLE_MAPS_KEY")   # optional company key (Street View Static API, billable)
     pg_bin: Path = Path(_get("PG_BIN", r"D:\Akash\pg17\bin"))
     pg_data: Path = Path(_get("PG_DATA", r"D:\Akash\pg17\data_sitesuit"))
 

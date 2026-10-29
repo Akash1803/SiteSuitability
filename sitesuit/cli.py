@@ -1,6 +1,6 @@
 """Command line.
   python -m sitesuit.cli init-db                         create schemas + load TN revenue villages
-  python -m sitesuit.cli run <site> --boundary <file> [--stages parcels,clip,...] [--force] [--dir <project dir>]
+  python -m sitesuit.cli run <site> --boundary <file> [--stages parcels,clip,...] [--skip crop,streetview] [--force] [--dir <project dir>]
   python -m sitesuit.cli status <site>
   python -m sitesuit.cli load-crop <workbook.xlsx>       add a crop-survey workbook to the statewide crop table
   python -m sitesuit.cli seed-cache <project dir>        import an earlier site's CLIP / A-register / GLV outputs into the cache
@@ -18,6 +18,7 @@ def main(argv=None):
     sub.add_parser("init-db")
     r = sub.add_parser("run"); r.add_argument("site"); r.add_argument("--boundary"); r.add_argument("--stages"); r.add_argument("--force", action="store_true")
     r.add_argument("--dir"); r.add_argument("--show-browser", action="store_true")
+    r.add_argument("--skip", default="", help="stages to leave out of the outputs, e.g. crop,streetview (their PPT slides are dropped)")
     s = sub.add_parser("status"); s.add_argument("site")
     c = sub.add_parser("load-crop"); c.add_argument("workbook")
     k = sub.add_parser("seed-cache"); k.add_argument("project_dir")
@@ -29,9 +30,12 @@ def main(argv=None):
         site = pipeline.open_site(a.site, a.dir)
         opts = {"boundary_file": a.boundary, "show_browser": a.show_browser}
         stages = a.stages.split(",") if a.stages else None
-        if (stages is None or "parcels" in stages) and not a.boundary:
+        if (stages is None or "parcels" in stages) and not a.boundary and (site.site_id is None or a.force):
             sys.exit("--boundary is needed for the parcels stage")
-        print(pipeline.run(site, stages, pipeline.Ctx(options=opts), force=a.force)); return
+        skip = {x for x in a.skip.split(",") if x}
+        from .stages import STAGES
+        ctx = pipeline.Ctx(options=opts, include=lambda: [s_.NAME for s_ in STAGES if s_.NAME not in skip])
+        print(pipeline.run(site, [x for x in (stages or [s_.NAME for s_ in STAGES]) if x not in skip], ctx, force=a.force)); return
     if a.cmd == "status":
         sid = db.site_id(a.site)
         for k_, (st, m) in db.stage_status(sid).items():

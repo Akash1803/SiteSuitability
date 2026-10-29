@@ -138,21 +138,99 @@ def slide_data(site, summ):
             "village_colors": summ.get("village_colors", {}), "split_surveys": summ.get("split_surveys", 0)}
 
 
-def build_ppt(site, img, AC, summ):
+def compose_streetview(raw, out, AC, pins, info):
+    """street-view map (pins on the road render) + one full-slide picture per pin that has a photo. Returns pin hotspots (px)."""
+    e = info["road"]
+    o = Image.new("RGB", (W, H + B), (16, 58, 78)); o.paste(Image.open(raw / "road_connectivity_raw.png").convert("RGB"), (0, B)); d = ImageDraw.Draw(o)
+    t = "STREET VIEW"; f = F(66); d.text(((W - d.textlength(t, font=f)) / 2, (B - 76) / 2), t, fill=(255, 235, 0), font=f)
+    to3857 = lambda lon, lat: (lon * 20037508.34 / 180, math.log(math.tan((90 + lat) * math.pi / 360)) * 6378137)
+    pxe = lambda x, y: ((x - e[0]) / (e[2] - e[0]) * W, B + (e[3] - y) / (e[3] - e[1]) * H)
+    hot = []
+    for p in pins:
+        x, y = pxe(*to3857(p["lon"], p["lat"]))
+        pin, (tx, ty) = teardrop(r=34, h=118, col=(16, 90, 200)); o.paste(pin, (int(round(x - tx)), int(round(y - ty))), pin)
+        cy = y - 118 + 34 + 3; fn = F(34); n = str(p["n"])
+        d.ellipse([x - 24, cy - 24, x + 24, cy + 24], fill=(255, 255, 255)); d.text((x - d.textlength(n, font=fn) / 2, cy - 20), n, fill=(16, 58, 78), font=fn)
+        hot.append({"n": p["n"], "x": x - 40, "y": y - 124, "w": 80, "h": 130})
+    qx, qy = pxe(*info["site_pole"]); lt = f"Site Boundary ({AC} Acres)"
+    if any(abs(h["x"] + 40 - qx) < 260 and abs(h["y"] + 124 - qy) < 90 for h in hot):
+        qy += 80   # keep the label clear of a pin
+    d.text((qx - d.textlength(lt, font=F(36)) / 2, qy - 22), lt, fill=(255, 255, 255), font=F(36), stroke_width=4, stroke_fill=(0, 0, 0))
+    lines = [f"{p['n']}. {p['label']}" + (f" ({p['date']})" if p.get("date") else "") for p in pins]
+    any_photo = any(p.get("photo") for p in pins)
+    lines.append("Click a pin to view " + ("the site photo" if any_photo else "the spot in Google Street View"))
+    fp = F(28); pw = max(d.textlength(s_, font=fp) for s_ in lines) + 48; ph = len(lines) * 42 + 70; x0, y0 = W - pw - 24, B + 24
+    d.rectangle([x0, y0, x0 + pw, y0 + ph], fill=(16, 58, 78), outline=(255, 255, 255), width=2)
+    d.text((x0 + 24, y0 + 12), "Street view points", fill=(255, 235, 0), font=F(32))
+    for k, s_ in enumerate(lines):
+        d.text((x0 + 24, y0 + 58 + k * 42), s_, fill=(255, 255, 255) if k < len(pins) else (255, 235, 0), font=fp)
+    o.save(out / "Street_View.png")
+    for p in pins:
+        if not p.get("photo"):
+            continue
+        ph_ = Image.open(p["photo"]).convert("RGB"); sl = Image.new("RGB", (W, H + B), (0, 0, 0))
+        sc = min(W / ph_.width, H / ph_.height); im = ph_.resize((int(ph_.width * sc), int(ph_.height * sc)), Image.LANCZOS)
+        sl.paste(im, ((W - im.width) // 2, B + (H - im.height) // 2)); dd = ImageDraw.Draw(sl)
+        dd.rectangle([0, 0, W, B], fill=(16, 58, 78))
+        tt = f"STREET VIEW - PIN {p['n']}: {p['label']}"; dd.text(((W - dd.textlength(tt, font=F(52))) / 2, (B - 60) / 2), tt, fill=(255, 235, 0), font=F(52))
+        src = ("Imagery: Google Street View" + (f", {p['date']}" if p.get("date") else "")) if p.get("photo_source") == "Google Street View" else ""
+        if src:
+            dd.text((24, B + H - 52), src, fill=(255, 255, 255), font=F(28), stroke_width=3, stroke_fill=(0, 0, 0))
+        dd.text((W - 330, B + H - 52), "Click to go back", fill=(255, 235, 0), font=F(28), stroke_width=3, stroke_fill=(0, 0, 0))
+        sl.save(out / f"Street_View_Pin_{p['n']}.png")
+    return hot
+
+
+def build_ppt(site, img, AC, summ, keep, pins=None, hot=None):
+    """keep: slide keys to include - only slides whose stage was ticked and finished (title and land summary always)."""
     from pptx import Presentation
+    from pptx.util import Emu
     tpl = SETTINGS.ppt_template
     if not tpl.exists():
         raise RuntimeError(f"PPT template not found: {tpl} (set PPT_TEMPLATE in .env)")
     shutil.copy(tpl, site.ppt)
     prs = Presentation(site.ppt)
     # template = Perungalathur v2 layout: 1 title, 2 location, 3 boundary, 4 road, 5 street view, 6-10 summaries, 11 DC land, 12-15 hidden photos
-    imgs = {2: "Location_Map", 3: "Boundary", 4: "Road_Connectivity", 6: "s06_land_summary", 7: "s07_glv_summary", 8: "s08_villagewise", 9: "s09_ownership", 10: "s10_crop"}
+    key_of = {2: "location", 3: "boundary", 4: "road", 5: "streetview", 6: "land", 7: "glv", 8: "village", 9: "ownership", 10: "crop", 11: "dc"}
+    imgs = {2: "Location_Map", 3: "Boundary", 4: "Road_Connectivity", 5: "Street_View", 6: "s06_land_summary", 7: "s07_glv_summary",
+            8: "s08_villagewise", 9: "s09_ownership", 10: "s10_crop"}
+    slides = list(prs.slides)
     for n, name in imgs.items():
-        s = prs.slides[n - 1]
-        pics = [sh for sh in s.shapes if sh.shape_type == 13 and sh.width > 0.9 * prs.slide_width]
-        s.part.related_part(pics[0]._element.blipFill.blip.rEmbed)._blob = (img / f"{name}.png").read_bytes()
+        if key_of[n] not in keep:
+            continue
+        sl = slides[n - 1]
+        pics = [sh for sh in sl.shapes if sh.shape_type == 13 and sh.width > 0.9 * prs.slide_width]
+        sl.part.related_part(pics[0]._element.blipFill.blip.rEmbed)._blob = (img / f"{name}.png").read_bytes()
+    drop = [n for n, k in key_of.items() if k not in keep]
+    photo_slides = slides[11:15]
+    if "streetview" in keep and pins:
+        sv = slides[4]; k = prs.slide_width / W
+        by_n = {h["n"]: h for h in hot}
+        for i in range(1, 5):
+            shp = [x for x in sv.shapes if x.name == f"Pin_{i}"]
+            p = next((q for q in pins if q["n"] == i), None)
+            if not shp:
+                continue
+            shp = shp[0]
+            if p is None:
+                shp._element.getparent().remove(shp._element); continue
+            h = by_n[i]
+            shp.left, shp.top, shp.width, shp.height = Emu(int(h["x"] * k)), Emu(int(h["y"] * k)), Emu(int(h["w"] * k)), Emu(int(h["h"] * k))
+            if p.get("photo"):
+                ps = photo_slides[i - 1]
+                pic = [x for x in ps.shapes if x.shape_type == 13][0]
+                ps.part.related_part(pic._element.blipFill.blip.rEmbed)._blob = (img / f"Street_View_Pin_{i}.png").read_bytes()
+                shp.click_action.target_slide = ps
+                for x in ps.shapes:
+                    if x.name in ("Back_to_Street_View", "Close"):
+                        x.click_action.target_slide = sv
+            else:
+                shp.click_action.hyperlink.address = p["url"]
+        drop += [12 + i - 1 for i in range(1, 5) if not next((q for q in pins if q["n"] == i and q.get("photo")), None)]
+    else:
+        drop += [12, 13, 14, 15]
     vs = [v["village"] for v in summ["villages"]]; tl = list(dict.fromkeys(v["taluk"] for v in summ["villages"])); ds = list(dict.fromkeys(v["district"] for v in summ["villages"]))
-    tb = [sh for sh in prs.slides[0].shapes if sh.has_text_frame and "Preliminary" in sh.text_frame.text][0]
+    tb = [sh for sh in slides[0].shapes if sh.has_text_frame and "Preliminary" in sh.text_frame.text][0]
     p0, p2 = tb.text_frame.paragraphs[0], tb.text_frame.paragraphs[2]
     r = p0.runs
     r[1].text = f"Preliminary Study of the Proposed Site Covering {AC} Acres in "; r[2].text = _and(tl); r[3].text = f" Taluk{'s' if len(tl) > 1 else ''}, "
@@ -162,15 +240,32 @@ def build_ppt(site, img, AC, summ):
         x.text = ""
     r[2].text = _and(vs)
     geom_c = summ.get("centroid")
-    tb3 = [sh for sh in prs.slides[2].shapes if sh.has_text_frame and "Google Maps" in sh.text_frame.text]
+    tb3 = [sh for sh in slides[2].shapes if sh.has_text_frame and "Google Maps" in sh.text_frame.text]
     if tb3 and geom_c:
         url = f"https://www.google.com/maps?q={geom_c[1]:.6f},{geom_c[0]:.6f}&t=k"
         run_ = [x for x in tb3[0].text_frame.paragraphs[0].runs if "google.com" in x.text][0]; run_.text = url; run_.hyperlink.address = url
     ids = prs.slides._sldIdLst
-    for idx in sorted([i for i in (4, 10, 11, 12, 13, 14) if i < len(ids)], reverse=True):   # street view, DC land, hidden photo slides
+    for idx in sorted({n - 1 for n in drop if n - 1 < len(ids)}, reverse=True):
         sid = ids[idx]; prs.part.drop_rel(sid.rId); ids.remove(sid)
     prs.core_properties.title = f"Preliminary Site Analysis - {site.name} ({AC} Acres)"
     prs.save(site.ppt)
+    return len(prs.slides._sldIdLst)
+
+
+OPTIONAL = ("maps", "landcost", "crop", "streetview")
+
+
+def _included(site, ctx):
+    st = db.stage_status(site.site_id)
+    return sorted(x for x in OPTIONAL if ctx.is_on(x) and st.get(x, ("",))[0] == "done")
+
+
+def stale(site, ctx):
+    """re-build the PPT when the ticked optional stages differ from the last build (e.g. crop unticked -> no crop slide)"""
+    return db.get_summary(site.site_id).get("ppt_included") != _included(site, ctx) or not site.ppt.exists()
+
+
+ZERO_COST = {x: 0.0 for x in ("gov_acre", "pat_acre", "act_gov", "neg_gov", "act_pat", "neg_pat", "act_total", "neg_total", "act_per_acre", "neg_per_acre")}
 
 
 def run(site, ctx):
@@ -178,23 +273,44 @@ def run(site, ctx):
     import geopandas as gpd
     c = gpd.read_file(site.boundary).geometry.iloc[0].centroid
     db.save_summary(site.site_id, {"centroid": [c.x, c.y]}); summ["centroid"] = [c.x, c.y]
-    cn = json.loads((site.work / "connectivity.json").read_text(encoding="utf-8"))
+    st = db.stage_status(site.site_id)
+    on = lambda s_: ctx.is_on(s_) and st.get(s_, ("",))[0] == "done"     # ticked for this run AND finished
     out = site.maps_dir; raw = site.work / "render"
+    has_maps = on("maps") and (raw / "_render_info.json").exists()
+    has_cost = on("landcost") and "landcost" in summ
+    has_crop = on("crop") and "crop" in summ
+    has_sv = has_maps and on("streetview") and (site.work / "streetview.json").exists()
+    keep = {"land"} | ({"location", "boundary", "road", "village", "ownership"} if has_maps else set()) | ({"glv"} if has_cost else set()) \
+        | ({"crop"} if has_crop and has_maps else set()) | ({"streetview"} if has_sv else set())
+    if not has_cost:
+        summ = {**summ, "landcost": {k: {**ZERO_COST, "total_acre": 1.0} for k in ("C1", "C2")}}
+    if not has_crop:
+        summ = {**summ, "crop": None}
     data = slide_data(site, summ)
     AC = f"{data['total']:.2f}"
-    for f in ("map_village.png", "map_owner.png", "map_crop.png"):
-        shutil.copy(raw / f, out / f)
+    pins = hot = None
+    if has_maps:
+        for f in ("map_village.png", "map_owner.png", "map_crop.png"):
+            shutil.copy(raw / f, out / f)
+        cn = json.loads((site.work / "connectivity.json").read_text(encoding="utf-8"))
+        compose(site, raw, out, AC, summ, cn)
+        if has_sv:
+            pins = json.loads((site.work / "streetview.json").read_text(encoding="utf-8"))
+            hot = compose_streetview(raw, out, AC, pins, json.loads((raw / "_render_info.json").read_text()))
     (out / "data.json").write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-    compose(site, raw, out, AC, summ, cn)
     ctx.log("building summary slides (headless Chrome) ...")
-    p = subprocess.run([sys.executable, "-m", "sitesuit.slides_html", str(out)], cwd=str(Path(__file__).resolve().parents[2]), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600)
+    p = subprocess.run([sys.executable, "-m", "sitesuit.slides_html", str(out)], cwd=str(Path(__file__).resolve().parents[2]), capture_output=True,
+                       text=True, encoding="utf-8", errors="replace", timeout=600)
     if p.returncode != 0:
         raise RuntimeError("slide build failed: " + (p.stderr or p.stdout)[-800:])
     for f in list(out.glob("s*_*.html")) + [out / "data.json"]:
         f.unlink(missing_ok=True)
-    build_ppt(site, out, AC, summ)
+    n = build_ppt(site, out, AC, summ, keep, pins, hot)
     db.register_document(site.site_id, "ppt", site.ppt)
-    return f"{site.ppt.name}: 9 slides, {AC} acres (PDF only after you confirm the slides)"
+    db.save_summary(site.site_id, {"ppt_included": _included(site, ctx)})
+    left = [k for k, s_ in (("location / boundary / road / village / ownership slides", "maps"), ("GLV + land cost slide", "landcost"),
+                            ("crop slide", "crop"), ("street view", "streetview")) if not on(s_)]
+    return f"{site.ppt.name}: {n} slides, {AC} acres" + (f"; left out: {', '.join(left)}" if left else "") + " (PDF only after you confirm the slides)"
 
 
 def export_pdf(site):

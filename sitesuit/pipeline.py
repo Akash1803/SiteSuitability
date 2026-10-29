@@ -18,6 +18,13 @@ class Ctx:
     log: callable = print
     progress_cb: callable = None
     stop_flag: callable = None
+    selected: callable = None      # current tick selection (set by run)
+    include: callable = None       # stages whose results go into the outputs (default = the selection)
+
+    def is_on(self, stage):
+        """stage ticked (an unticked stage is also left out of the master Excel / PPT)"""
+        f = self.include or self.selected
+        return f is None or stage in f()
 
     def progress(self, i, n, msg=""):
         if self.progress_cb:
@@ -30,9 +37,10 @@ class Ctx:
 
 
 # inputs each stage needs (crop is optional for the PPT: without it the crop slide shows "No Survey Data")
-REQUIRES = {"clip": ("parcels",), "areg": ("clip",), "glv": ("parcels",), "master": ("areg", "glv"), "crop": ("master",),
-            "landcost": ("master",), "fmb": ("parcels",), "maps": ("master",), "ppt": ("master", "landcost", "maps")}
-USES = {**REQUIRES, "maps": ("master", "crop"), "ppt": ("master", "landcost", "maps", "crop")}   # what goes stale when a stage re-runs
+REQUIRES = {"clip": ("parcels",), "areg": ("clip",), "glv": ("parcels",), "master": ("areg",), "crop": ("master",),
+            "landcost": ("master", "glv"), "fmb": ("parcels",), "maps": ("master",), "streetview": ("maps",), "ppt": ("master",)}
+# what goes stale when a stage re-runs (optional inputs included)
+USES = {**REQUIRES, "master": ("areg", "glv"), "maps": ("master", "crop"), "ppt": ("master", "landcost", "maps", "crop", "streetview")}
 
 
 def dependents(stage):
@@ -71,6 +79,7 @@ def run(site, stages=None, ctx=None, force=False, pause_at_review=False):
     whose required input stage is neither done nor about to run is left out too. Returns the last status."""
     ctx = ctx or Ctx()
     selected = stages if callable(stages) else (lambda s=list(stages or [x.NAME for x in STAGES]): s)
+    ctx.selected = selected
     for st in STAGES:
         nm = st.NAME
         chosen = selected()
@@ -82,7 +91,10 @@ def run(site, stages=None, ctx=None, force=False, pause_at_review=False):
             raise RuntimeError("run the parcels stage first (it registers the site)")
         status_now = db.stage_status(site.site_id) if site.site_id else {}
         if not force and status_now.get(nm, ("",))[0] == "done":
-            ctx.log(f"[{nm}] already done - skipped"); continue
+            if hasattr(st, "stale") and st.stale(site, ctx):
+                ctx.log(f"[{nm}] ticks changed since it was built - building it again")
+            else:
+                ctx.log(f"[{nm}] already done - skipped"); continue
         missing = [d for d in REQUIRES.get(nm, ()) if status_now.get(d, ("",))[0] != "done"]
         if missing:
             ctx.log(f"[{nm}] left out - it needs {', '.join(BY_NAME[d].TITLE for d in missing)} first")
@@ -90,15 +102,17 @@ def run(site, stages=None, ctx=None, force=False, pause_at_review=False):
         ctx.log(f"[{nm}] {st.TITLE} ...")
         if site.site_id:
             db.set_stage(site.site_id, nm, "running")
-            reset_after(site.site_id, nm)   # everything downstream must be rebuilt from this stage's new output
         try:
             msg = st.run(site, ctx)
             db.set_stage(site.site_id, nm, "done", msg); ctx.log(f"[{nm}] done - {msg}")
+            reset_after(site.site_id, nm)   # everything that uses this stage's new output must be rebuilt
         except Exception as e:
             kind = type(e).__name__
             status = "waiting" if kind in ("Waiting", "NeedsReview") else "failed"
             if site.site_id:
                 db.set_stage(site.site_id, nm, status, str(e)[:1000])
+                if status == "failed":
+                    reset_after(site.site_id, nm)
             ctx.log(f"[{nm}] {status.upper()} - {e}")
             if status == "failed":
                 ctx.log(traceback.format_exc(limit=4))

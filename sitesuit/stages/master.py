@@ -18,8 +18,18 @@ from ..util import ACRE_M2, GOVT, SQFT_PER_M2, child_of, glv_pick, survey_sort_k
 NAME, TITLE = "master", "Master Excel + subdivision parcels"
 
 
+def _use_glv(site, ctx):
+    return bool(site.glv_output.exists() and ctx.is_on("glv"))
+
+
+def stale(site, ctx):
+    """re-build when GLV was ticked / unticked since the last build"""
+    used = db.get_summary(site.site_id).get("master_used_glv")
+    return used is not None and used != _use_glv(site, ctx)
+
+
 # ---------------- A. records ----------------
-def build_records(site, log):
+def build_records(site, log, use_glv=True):
     a = pd.read_excel(site.areg_excel, sheet_name="AReg_Records", dtype=str)
     a["vcode"] = [vcode(d, t, v) for d, t, v in zip(a.district_id, a.taluk_id, a.village_id)]
     a["uid"] = a["Unique ID 2"]; a["sensitive_flag"] = a.sensitive_flag.fillna("")
@@ -30,7 +40,10 @@ def build_records(site, log):
     a = a.merge(c.drop_duplicates("uid")[["uid", "response_status"]].rename(columns={"response_status": "clip_status"}), on="uid", how="left")
     a["clip_status"] = a.clip_status.fillna("not in CLIP output (A-register /1 used)")
     # ---- GLV ----
-    g = pd.read_excel(site.glv_output, sheet_name="GLV_Survey_Wise", dtype=str)
+    gcols = ["district_id", "taluk_id", "village_id", "survey_no", "Subdivision Number", "Guideline_Value_British", "Land_Classification", "Effective_Start_Date", "Status"]
+    g = pd.read_excel(site.glv_output, sheet_name="GLV_Survey_Wise", dtype=str) if use_glv else pd.DataFrame(columns=gcols)
+    if not use_glv:
+        log("GLV left out of this run - guideline value columns stay empty")
     g["vcode"] = [vcode(d, t, v) for d, t, v in zip(g.district_id, g.taluk_id, g.village_id)]
     g = g[g.Status == "Success"].copy()
     g["unit"] = g.Guideline_Value_British.str.extract(r"/\s*(.*)$")[0].str.strip().fillna("")
@@ -183,7 +196,7 @@ def run(site, ctx):
     log = ctx.log
     summ = db.get_summary(site.site_id)
     U = summ.get("utm") or utm_epsg(gpd.read_file(site.boundary).geometry.iloc[0].centroid.x)
-    rec, fmb, vec = build_records(site, log)
+    rec, fmb, vec = build_records(site, log, use_glv=_use_glv(site, ctx))
     log(f"{len(rec)} records: " + ", ".join(f"{k} {v}" for k, v in rec.parcel_status.value_counts().items()))
     r = split_records(rec, fmb, vec, U, log)
     r = r[r.geometry.notna()].copy()
@@ -222,7 +235,7 @@ def run(site, ctx):
     data = {"site_acre": float(ins.site_acre.sum()), "patta_acre": float(ins[ins.ownership == "Patta"].site_acre.sum()), "govt_acre": float(ins[ins.ownership == "Govt"].site_acre.sum()),
             "glv_crore": float(ins.glv_value_lakh.sum() / 100), "subdivisions": int(len(ins)), "overlaps": int(len(ov)), "gap_acre": float(gap.area / ACRE_M2),
             "exact_geometry": int(ins.geometry_quality.str.startswith("Exact").sum())}
-    db.save_summary(site.site_id, {"master": data})
+    db.save_summary(site.site_id, {"master": data, "master_used_glv": _use_glv(site, ctx)})
     for k in ("subdivisions", "master"):
         db.register_document(site.site_id, k, getattr(site, k))
     return (f"{data['site_acre']:.2f} ac in {data['subdivisions']} subdivisions (patta {data['patta_acre']:.2f}, govt {data['govt_acre']:.2f}); "

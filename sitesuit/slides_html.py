@@ -245,6 +245,37 @@ if d.get("sensitive"):
         f'<div style="width:{r["acre"] / A * 100:.2f}%;background:{SENS_C.get(r["category"], "#9e9e9e")}"></div>' for r in rows) + '</div></div></div>'
     shot(html + END, "s12_sensitive"); EXTRA.append("s12_sensitive")
 
+# ---------------- GOVERNMENT LAND CLASSIFICATION (after ownership) ----------------
+if d.get("govtland"):
+    gl = d["govtland"]; GT = gl["govt_acre"]; rows = gl["rows"]
+    show = rows[:5]
+    if len(rows) > 5:
+        rest = rows[5:]
+        show = show + [{"category": "Other categories", "acre": sum(r["acre"] for r in rest), "subdivisions": sum(r["subdivisions"] for r in rest), "color": "#9e9e9e",
+                        "surveys": "", "note": f"{len(rest)} smaller categories (Govt_Land_Classification sheet)"}]
+    html = BASE + css3 + '<div class="title">GOVERNMENT LAND CLASSIFICATION</div><div class="body"><div class="map"><img src="map_govt.png"></div><div class="panel"><h3>GOVERNMENT LAND – AREA (ACRES)</h3><div class="hdr"><span>Classification (A-register)</span><span>Area (acres)</span></div>'
+    for r in show:
+        p_ = r["acre"] / GT * 100 if GT else 0
+        html += (f'<div class="vrow" style="padding-top:18px"><div class="nm" style="font-size:40px"><span class="l"><span class="dot" style="background:{r["color"]}"></span>{r["category"]}</span><span>{f2(r["acre"])}</span></div>'
+                 f'<div class="tr"><div style="width:{max(p_, 0.6):.1f}%;background:{r["color"]}"></div></div><div class="p">{pct(p_)} of govt land · {r["subdivisions"]} subdiv. · ' + (r.get("note") or f'survey {r["surveys"]}') + '</div></div>')
+    if not gl.get("codes_named"):
+        html += '<div style="margin-top:auto;padding:20px 50px;font-size:25px;color:#555;border-top:2px solid #e3e8ee">Poramboke codes are shown as recorded in the A-register; names appear once the code list (Poramboke_Codes.xlsx) is filled in.</div>'
+    html += '</div></div>'
+    lt = gl["by_land_type"]; vv = gl["by_village"]; th = gl.get("by_tharam", {})
+    top = rows[0] if rows else {"category": "-", "acre": 0}
+    html += '<div class="cov"><div class="lab">GOVERNMENT<br>LAND MIS</div><div class="stats"><div class="row">'
+    for big, small, sub in ((f2(GT), f"acres · {GT / A * 100:.2f}%", "Government land of the site"),
+                            (f2(lt.get("Poramboke", 0)), "acres", "Poramboke"),
+                            (f2(sum(v for k, v in lt.items() if k != "Poramboke")), "acres", "Assessed govt land (" + ", ".join(k for k in lt if k != "Poramboke") + ")" if len(lt) > 1 else "Assessed govt land"),
+                            (f2(top["acre"]), "acres", f"{top['category']} (largest)")):
+        html += f'<div><div class="big">{big} <small>{small}</small></div><div class="sub">{sub}</div></div>'
+    html += '</div><div class="bar">' + "".join(f'<div style="width:{r["acre"] / GT * 100:.2f}%;background:{r["color"]}"></div>' for r in rows) + '</div>'
+    line = "Village-wise: " + ", ".join(f"{k} {f2(v)}" for k, v in list(vv.items())[:4])
+    if th:
+        line += " &nbsp;|&nbsp; Soil grade: " + ", ".join(f"{k} {f2(v)}" for k, v in list(th.items())[:3])
+    html += f'<div class="sub" style="margin-top:12px;font-size:30px">{line}</div></div></div>'
+    shot(html + END, "s09b_govt"); EXTRA.append("s09b_govt")
+
 # ---------------- screenshots ----------------
 from selenium import webdriver
 o = webdriver.ChromeOptions(); o.add_argument("--headless=new"); o.add_argument("--window-size=3240,2250"); o.add_argument("--force-device-scale-factor=1"); o.add_argument("--hide-scrollbars")

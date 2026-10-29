@@ -138,6 +138,13 @@ if "map_sensitive" in ONLY:
     se = QgsVectorLayer(PAR, "se", "ogr"); se.setSubsetString("\"sensitive_cat\" <> ''")
     se.setRenderer(QgsCategorizedSymbolRenderer("sensitive_cat", [QgsRendererCategory(k, QgsFillSymbol.createSimple({"color": rgba(c, 225), "outline_color": "#000000", "outline_width": "0.3"}), k) for k, c in SENS.items()]))
     render([se, base, red(), sat], mext, "map_sensitive.png", 150, 1, MW, MH, utm)
+if "map_govt" in ONLY:
+    GC = json.load(open(A["govt_colors"], encoding="utf-8"))
+    base = QgsVectorLayer(PAR, "base", "ogr")
+    base.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({"color": "255,255,255,35", "outline_color": "#ffffff", "outline_width": "0.12"})))
+    gv = QgsVectorLayer(PAR, "gv", "ogr"); gv.setSubsetString("\"ownership\" = 'Govt'")
+    gv.setRenderer(QgsCategorizedSymbolRenderer("govt_cat", [QgsRendererCategory(k, QgsFillSymbol.createSimple({"color": rgba(c, 225), "outline_color": "#000000", "outline_width": "0.3"}), k) for k, c in GC.items()]))
+    render([gv, base, red(), sat], mext, "map_govt.png", 150, 1, MW, MH, utm)
 if ONLY:
     json.dump({"only": sorted(ONLY)}, open(OUT + "/_render_only.json", "w"))
 else:

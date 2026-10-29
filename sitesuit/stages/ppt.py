@@ -204,19 +204,23 @@ def build_ppt(site, img, AC, summ, keep, pins=None, hot=None):
         sl = slides[n - 1]
         pics = [sh for sh in sl.shapes if sh.shape_type == 13 and sh.width > 0.9 * prs.slide_width]
         sl.part.related_part(pics[0]._element.blipFill.blip.rEmbed)._blob = (img / f"{name}.png").read_bytes()
-    drop = [n for n, k in key_of.items() if k not in keep]
+    drop = [n for n, k in key_of.items() if k not in keep]      # template slide numbers (1-based) to remove at the end
     photo_slides = slides[11:15]
-    ids_ = prs.slides._sldIdLst; pos = 10      # right after template slide 10 (crop)
-    extra = sum(1 for k_ in ("soil", "sensitive") if k_ in keep)
-    for k_, name in (("soil", "s11_soil"), ("sensitive", "s12_sensitive")):
+    ids_ = prs.slides._sldIdLst
+    tmpl = list(ids_)                                              # template slide id elements, positions fixed before inserting
+    extra = 0
+    last_after = {}
+    # new slides: government land after ownership (template 9); soil and sensitive land after crop (template 10)
+    for k_, name, anchor in (("govtland", "s09b_govt", 9), ("soil", "s11_soil", 10), ("sensitive", "s12_sensitive", 10)):
         if k_ not in keep:
             continue
         ns = prs.slides.add_slide(slides[9].slide_layout)
         for ph in list(ns.placeholders):
             ph._element.getparent().remove(ph._element)
         ns.shapes.add_picture(str(img / f"{name}.png"), 0, 0, prs.slide_width, prs.slide_height)
-        el = ids_[-1]; ids_.remove(el); ids_.insert(pos, el); pos += 1
-        drop = [n + 1 if n >= pos else n for n in drop]   # template slides after the insert move down by one
+        el = ids_[-1]; ids_.remove(el)
+        after = last_after.get(anchor, tmpl[anchor - 1])
+        ids_.insert(list(ids_).index(after) + 1, el); last_after[anchor] = el
     if "streetview" in keep and pins:
         sv = slides[4]; k = prs.slide_width / W
         by_n = {h["n"]: h for h in hot}
@@ -240,9 +244,9 @@ def build_ppt(site, img, AC, summ, keep, pins=None, hot=None):
                         x.click_action.target_slide = sv
             else:
                 shp.click_action.hyperlink.address = p["url"]
-        drop += [12 + i - 1 + extra for i in range(1, 5) if not next((q for q in pins if q["n"] == i and q.get("photo")), None)]
+        drop += [12 + i - 1 for i in range(1, 5) if not next((q for q in pins if q["n"] == i and q.get("photo")), None)]
     else:
-        drop += [12 + extra, 13 + extra, 14 + extra, 15 + extra]
+        drop += [12, 13, 14, 15]
     vs = [v["village"] for v in summ["villages"]]; tl = list(dict.fromkeys(v["taluk"] for v in summ["villages"])); ds = list(dict.fromkeys(v["district"] for v in summ["villages"]))
     tb = [sh for sh in slides[0].shapes if sh.has_text_frame and "Preliminary" in sh.text_frame.text][0]
     p0, p2 = tb.text_frame.paragraphs[0], tb.text_frame.paragraphs[2]
@@ -259,14 +263,15 @@ def build_ppt(site, img, AC, summ, keep, pins=None, hot=None):
         url = f"https://www.google.com/maps?q={geom_c[1]:.6f},{geom_c[0]:.6f}&t=k"
         run_ = [x for x in tb3[0].text_frame.paragraphs[0].runs if "google.com" in x.text][0]; run_.text = url; run_.hyperlink.address = url
     ids = prs.slides._sldIdLst
-    for idx in sorted({n - 1 for n in drop if n - 1 < len(ids)}, reverse=True):
-        sid = ids[idx]; prs.part.drop_rel(sid.rId); ids.remove(sid)
+    for n in sorted(set(drop)):
+        if n - 1 < len(tmpl):
+            sid = tmpl[n - 1]; prs.part.drop_rel(sid.rId); ids.remove(sid)
     prs.core_properties.title = f"Preliminary Site Analysis - {site.name} ({AC} Acres)"
     prs.save(site.ppt)
     return len(prs.slides._sldIdLst)
 
 
-OPTIONAL = ("maps", "landcost", "crop", "streetview", "soil", "sensitive")
+OPTIONAL = ("maps", "landcost", "crop", "streetview", "soil", "sensitive", "govtland")
 
 
 def _included(site, ctx):
@@ -296,8 +301,9 @@ def run(site, ctx):
     has_sv = has_maps and on("streetview") and (site.work / "streetview.json").exists()
     has_soil = has_maps and on("soil") and "soil" in summ and (raw / "map_soil.png").exists()
     has_sens = has_maps and on("sensitive") and "sensitive" in summ and (raw / "map_sensitive.png").exists()
+    has_govt = has_maps and on("govtland") and "govtland" in summ and (raw / "map_govt.png").exists()
     keep = {"land"} | ({"location", "boundary", "road", "village", "ownership"} if has_maps else set()) | ({"glv"} if has_cost else set()) \
-        | ({"crop"} if has_crop and has_maps else set()) | ({"streetview"} if has_sv else set())         | ({"soil"} if has_soil else set()) | ({"sensitive"} if has_sens else set())
+        | ({"crop"} if has_crop and has_maps else set()) | ({"streetview"} if has_sv else set())         | ({"soil"} if has_soil else set()) | ({"sensitive"} if has_sens else set()) | ({"govtland"} if has_govt else set())
     if not has_cost:
         summ = {**summ, "landcost": {k: {**ZERO_COST, "total_acre": 1.0} for k in ("C1", "C2")}}
     if not has_crop:
@@ -310,9 +316,11 @@ def run(site, ctx):
         data["tharam_colors"] = json.loads(sc_.read_text())["tharam_colors"] if sc_.exists() else {}
     if has_sens:
         data["sensitive"] = summ["sensitive"]
+    if has_govt:
+        data["govtland"] = summ["govtland"]
     pins = hot = None
     if has_maps:
-        for f in ("map_village.png", "map_owner.png", "map_crop.png", "map_soil.png", "map_sensitive.png"):
+        for f in ("map_village.png", "map_owner.png", "map_crop.png", "map_soil.png", "map_sensitive.png", "map_govt.png"):
             if (raw / f).exists():
                 shutil.copy(raw / f, out / f)
         cn = json.loads((site.work / "connectivity.json").read_text(encoding="utf-8"))
@@ -332,7 +340,7 @@ def run(site, ctx):
     db.register_document(site.site_id, "ppt", site.ppt)
     db.save_summary(site.site_id, {"ppt_included": _included(site, ctx)})
     left = [k for k, s_ in (("location / boundary / road / village / ownership slides", "maps"), ("GLV + land cost slide", "landcost"),
-                            ("crop slide", "crop"), ("street view", "streetview"), ("soil slide", "soil"), ("sensitive land slide", "sensitive")) if not on(s_)]
+                            ("crop slide", "crop"), ("street view", "streetview"), ("soil slide", "soil"), ("sensitive land slide", "sensitive"), ("government land slide", "govtland")) if not on(s_)]
     return f"{site.ppt.name}: {n} slides, {AC} acres" + (f"; left out: {', '.join(left)}" if left else "") + " (PDF only after you confirm the slides)"
 
 

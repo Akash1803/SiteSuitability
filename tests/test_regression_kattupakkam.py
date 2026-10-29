@@ -1,14 +1,14 @@
 """Regression against the Kattupakkam Site_1 numbers delivered on 2026-10-29 (hand pipeline).
-Needs the local database with the 'Kattupakkam Test' site already run (python -m sitesuit.cli run "Kattupakkam Test" ...)."""
+Needs the local database with the 'Kattupakkam Test' site already run (python -m sitesuit.cli run "Regression Kattupakkam" --dir D:/Projects/Sipcot_Projects/_SiteSuit_Test/Regression_Kattupakkam --boundary <Kattupakkam_Outer_Boundary.geojson> --stages parcels,clip,areg,glv,master,crop,landcost)."""
 import pytest
 
 try:
     from sitesuit import db
-    SID = db.site_id("Kattupakkam Test")
+    SID = db.site_id("Regression Kattupakkam")
 except Exception:      # no database here
     SID = None
 
-pytestmark = pytest.mark.skipif(SID is None, reason="local database / Kattupakkam Test site not available")
+pytestmark = pytest.mark.skipif(SID is None, reason="local database / Regression Kattupakkam site not available")
 
 
 def test_totals_match_delivery():

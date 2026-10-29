@@ -101,6 +101,9 @@ def run(site, ctx):
                     if ctx.stopped():
                         raise RuntimeError("stopped by user")
                     st, rows = rg.survey(*vmap[vc], sn)
+                    if st not in DONE:   # the portal often times out once; one immediate retry on a fresh page
+                        ctx.log(f"GLV {vc} survey {sn}: {st} - retrying once"); rg.recover() if rg.d else None
+                        st, rows = rg.survey(*vmap[vc], sn)
                     if st in DONE:
                         with db.connect() as c:
                             c.execute("DELETE FROM portal.glv WHERE vcode = %s AND survey_no = %s", (vc, sn))

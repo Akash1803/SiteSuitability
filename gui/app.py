@@ -64,8 +64,14 @@ class Main(QMainWindow):
         v.addWidget(box)
 
         # ---- review / waiting banner ----
-        self.banner = QFrame(); self.banner.setStyleSheet("QFrame{background:#fff3e0;border:1px solid #ef6c00;border-radius:6px}")
+        # fixed colours on every child so the text stays readable in both the light and the dark Windows theme
+        self.banner = QFrame(); self.banner.setObjectName("banner")
+        self.banner.setStyleSheet("#banner{background:#fff3e0;border:2px solid #ef6c00;border-radius:6px}"
+                                  "#banner QLabel{color:#3e2723;background:transparent;font-size:10pt;font-weight:600;padding:4px}"
+                                  "#banner QPushButton{color:#ffffff;background:#e65100;border:none;border-radius:4px;padding:8px 16px;font-weight:600}"
+                                  "#banner QPushButton:hover{background:#bf360c}")
         bl = QHBoxLayout(self.banner); self.banner_text = QLabel(); self.banner_text.setWordWrap(True)
+        self.banner_text.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.banner_btn = QPushButton(); self.banner_btn.clicked.connect(self.banner_action)
         bl.addWidget(self.banner_text, 1); bl.addWidget(self.banner_btn); self.banner.hide(); self.banner_kind = None
         v.addWidget(self.banner)
@@ -79,6 +85,8 @@ class Main(QMainWindow):
             c = QTableWidgetItem(); c.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled); c.setCheckState(Qt.Checked)
             self.table.setItem(i, 0, c); self.table.setItem(i, 1, QTableWidgetItem(f"{i + 1}. {s.TITLE}"))
             self.table.setItem(i, 2, QTableWidgetItem("pending")); self.table.setItem(i, 3, QTableWidgetItem(""))
+        self.selected = {s.NAME for s in STAGES}
+        self.table.itemChanged.connect(self.tick_changed)
         tl.addWidget(self.table)
         row = QHBoxLayout()
         self.b_run = QPushButton("Run (resume)"); self.b_run.clicked.connect(lambda: self.start(force=False))
@@ -184,6 +192,14 @@ class Main(QMainWindow):
     def ticked(self):
         return [s.NAME for i, s in enumerate(STAGES) if self.table.item(i, 0).checkState() == Qt.Checked]
 
+    def tick_changed(self, item):
+        if item.column() != 0:
+            return
+        self.selected = set(self.ticked())          # the running worker reads this before each stage
+        nm = STAGES[item.row()].NAME
+        if self.thread and self.thread.isRunning():
+            self.say(f"[{nm}] {'added to' if nm in self.selected else 'removed from'} this run")
+
     def start(self, force=False, pause=True):
         try:
             site = self.site()
@@ -196,8 +212,18 @@ class Main(QMainWindow):
             QMessageBox.warning(self, "Site", "this site is new - tick stage 1 (parcels)"); return
         if force and not QMessageBox.question(self, "Re-run", f"Re-run these stages from scratch?\n{', '.join(stages)}") == QMessageBox.Yes:
             return
+        # an existing site with a different boundary file: rebuild from stage 1 (otherwise the old boundary would be reused)
+        if site.site_id and "parcels" in stages and not force and self.boundary.text().strip():
+            new_b = Path(self.boundary.text().strip()).resolve()
+            if new_b != Path(site.boundary).resolve():
+                if QMessageBox.question(self, "Site already exists",
+                                        f"'{site.name}' already exists with another boundary.\n\nUse the new boundary and rebuild every stage?\n"
+                                        f"(Choose No and type a new site name to keep the old one.)") != QMessageBox.Yes:
+                    return
+                db.set_stage(site.site_id, "parcels", "pending", "new boundary chosen")
         opts = {"boundary_file": self.boundary.text().strip(), "show_browser": self.show_browser.isChecked()}
-        self.worker = Worker(site, stages, opts, force, pause); self.thread = QThread()
+        self.selected = set(stages)
+        self.worker = Worker(site, lambda: self.selected, opts, force, pause); self.thread = QThread()
         self.worker.moveToThread(self.thread); self.thread.started.connect(self.worker.run)
         self.worker.log.connect(self.on_log); self.worker.progress.connect(self.on_progress); self.worker.finished.connect(self.on_done)
         self.worker.finished.connect(self.thread.quit)

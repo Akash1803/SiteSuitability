@@ -29,6 +29,29 @@ class Ctx:
         return bool(self.stop_flag and self.stop_flag())
 
 
+# inputs each stage needs (crop is optional for the PPT: without it the crop slide shows "No Survey Data")
+REQUIRES = {"clip": ("parcels",), "areg": ("clip",), "glv": ("parcels",), "master": ("areg", "glv"), "crop": ("master",),
+            "landcost": ("master",), "fmb": ("parcels",), "maps": ("master",), "ppt": ("master", "landcost", "maps")}
+USES = {**REQUIRES, "maps": ("master", "crop"), "ppt": ("master", "landcost", "maps", "crop")}   # what goes stale when a stage re-runs
+
+
+def dependents(stage):
+    out, todo = set(), [stage]
+    while todo:
+        s = todo.pop()
+        for k, v in USES.items():
+            if s in v and k not in out:
+                out.add(k); todo.append(k)
+    return out
+
+
+def reset_after(sid, stage):
+    later = sorted(dependents(stage))
+    with db.connect() as c:
+        c.execute("UPDATE site.stage_run SET status = 'pending', message = %s WHERE site_id = %s AND stage = ANY(%s) AND status <> 'pending'",
+                  (f"to run again after '{stage}' was re-run", sid, later))
+
+
 def open_site(name, project_dir=None):
     known = {n: (i, d) for i, n, d, _ in db.list_sites()}
     if project_dir:
@@ -43,20 +66,31 @@ def open_site(name, project_dir=None):
 
 
 def run(site, stages=None, ctx=None, force=False, pause_at_review=False):
-    """stages: list of stage names (default all). Stages already 'done' are skipped unless force. Returns the last status."""
+    """stages: list of stage names, or a callable returning the CURRENT selection (re-read before every stage, so the user
+    can tick / untick while a run is going). Done stages are skipped unless force. Unticked stages are left out, and a stage
+    whose required input stage is neither done nor about to run is left out too. Returns the last status."""
     ctx = ctx or Ctx()
-    names = stages or [s.NAME for s in STAGES]
-    for nm in names:
-        st = BY_NAME[nm]
-        if site.site_id is None and nm != "parcels":
-            raise RuntimeError("run the parcels stage first (it registers the site)")
-        if site.site_id and not force and db.stage_status(site.site_id).get(nm, ("",))[0] == "done":
-            ctx.log(f"[{nm}] already done - skipped"); continue
+    selected = stages if callable(stages) else (lambda s=list(stages or [x.NAME for x in STAGES]): s)
+    for st in STAGES:
+        nm = st.NAME
+        chosen = selected()
+        if nm not in chosen:
+            continue
         if ctx.stopped():
             return "stopped"
+        if site.site_id is None and nm != "parcels":
+            raise RuntimeError("run the parcels stage first (it registers the site)")
+        status_now = db.stage_status(site.site_id) if site.site_id else {}
+        if not force and status_now.get(nm, ("",))[0] == "done":
+            ctx.log(f"[{nm}] already done - skipped"); continue
+        missing = [d for d in REQUIRES.get(nm, ()) if status_now.get(d, ("",))[0] != "done"]
+        if missing:
+            ctx.log(f"[{nm}] left out - it needs {', '.join(BY_NAME[d].TITLE for d in missing)} first")
+            continue
         ctx.log(f"[{nm}] {st.TITLE} ...")
         if site.site_id:
             db.set_stage(site.site_id, nm, "running")
+            reset_after(site.site_id, nm)   # everything downstream must be rebuilt from this stage's new output
         try:
             msg = st.run(site, ctx)
             db.set_stage(site.site_id, nm, "done", msg); ctx.log(f"[{nm}] done - {msg}")
@@ -71,7 +105,8 @@ def run(site, stages=None, ctx=None, force=False, pause_at_review=False):
             if status == "waiting" and nm in NON_BLOCKING:
                 ctx.log(f"[{nm}] continuing with the other stages; run it again when its input is ready"); continue
             return status
-        if pause_at_review and nm in REVIEW_AFTER and nm != names[-1]:
+        later = [x.NAME for x in STAGES][[x.NAME for x in STAGES].index(nm) + 1:]
+        if pause_at_review and nm in REVIEW_AFTER and any(x in selected() for x in later):
             ctx.log(f"[{nm}] review point - check the A-register Excel, then continue")
             return "review"
     return "done"

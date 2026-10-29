@@ -69,6 +69,12 @@ def village_map(site, ctx, vills):
     m = pd.DataFrame([{"vcode": v, "village": n, "zone_list_id": known.get(v, [None] * 7)[0], "sro_list_id": known.get(v, [None] * 7)[1],
                        "sro_name": known.get(v, [None] * 7)[2], "village_list_id": known.get(v, [None] * 7)[3], "reginet_name": known.get(v, [None] * 7)[4],
                        "match_score": known.get(v, [None] * 7)[5], "confirmed": known.get(v, [None] * 7)[6]} for v, n in vills])
+    if site.glv_map.exists():   # keep a typed indicative rate
+        old = pd.read_excel(site.glv_map, dtype=str)
+        if "indicative_rate_acre" in old.columns:
+            m = m.merge(old[["vcode", "indicative_rate_acre"]], on="vcode", how="left")
+    if "indicative_rate_acre" not in m.columns:
+        m["indicative_rate_acre"] = ""
     m.to_excel(site.glv_map, index=False)
     bad = m[~m.confirmed.fillna(False).astype(bool)]
     if len(bad):

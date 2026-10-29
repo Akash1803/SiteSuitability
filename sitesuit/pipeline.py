@@ -8,7 +8,8 @@ from .config import SETTINGS
 from .site import Site, slug
 from .stages import STAGES, BY_NAME
 
-REVIEW_AFTER = ("areg",)      # the app pauses here so the user checks the A-register before GLV / costs
+REVIEW_AFTER = ("areg",)     # the app pauses here so the user checks the A-register before GLV / costs
+NON_BLOCKING = ("crop",)     # a missing crop workbook does not stop the cost, maps and PPT
 
 
 @dataclass
@@ -67,6 +68,8 @@ def run(site, stages=None, ctx=None, force=False, pause_at_review=False):
             ctx.log(f"[{nm}] {status.upper()} - {e}")
             if status == "failed":
                 ctx.log(traceback.format_exc(limit=4))
+            if status == "waiting" and nm in NON_BLOCKING:
+                ctx.log(f"[{nm}] continuing with the other stages; run it again when its input is ready"); continue
             return status
         if pause_at_review and nm in REVIEW_AFTER and nm != names[-1]:
             ctx.log(f"[{nm}] review point - check the A-register Excel, then continue")

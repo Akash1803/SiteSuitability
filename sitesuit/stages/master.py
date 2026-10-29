@@ -39,6 +39,11 @@ def build_records(site, log):
     g["uid"] = g.vcode + "_" + g["Subdivision Number"].str.strip()
     gx = g.drop_duplicates("uid").set_index("uid")
     by_s = {k: list(zip(d.num, d.unit, d.Land_Classification, d.Effective_Start_Date)) for k, d in g.groupby(["vcode", "survey_no"])}
+    ind = {}   # optional indicative Rs/acre per village typed into the GLV village map (villages TNReginet lists only as a blanket rate)
+    if site.glv_map.exists():
+        mp = pd.read_excel(site.glv_map, dtype=str)
+        if "indicative_rate_acre" in mp.columns:
+            ind = {r.vcode: float(r.indicative_rate_acre) for r in mp.itertuples() if str(r.indicative_rate_acre).replace(".", "", 1).isdigit()}
     out = []
     for r in a.itertuples():
         govt = (r.government_priority == GOVT) or str(r.land_type_english) == "Poramboke"
@@ -53,6 +58,8 @@ def build_records(site, log):
         if len(vv):
             e = vv.sort_values("num").iloc[0]
             out.append((f"Indicative - no entry for survey {r.survey_no}: lowest {e.Land_Classification} rate of the village; confirm with SRO", e.num, "Acre", e.Land_Classification, e.Effective_Start_Date))
+        elif ind.get(r.vcode):
+            out.append((f"Indicative village rate Rs {ind[r.vcode]:,.0f}/acre from the GLV village map (no survey-wise entry); confirm with SRO", ind[r.vcode], "Acre", "Indicative", ""))
         else:
             out.append(("No GLV data", np.nan, "", "", ""))
     a[["glv_match", "glv_rate", "glv_unit", "glv_land_classification", "glv_effective_date"]] = pd.DataFrame(out, index=a.index)

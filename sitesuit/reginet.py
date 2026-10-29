@@ -153,7 +153,8 @@ class Reginet:
     def options(self, did):
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support.ui import Select
-        return [(o.get_attribute("value"), o.text.strip()) for o in Select(self.d.find_element(By.ID, did)).options if o.get_attribute("value") not in ("", "0", None)]
+        return [(o.get_attribute("value"), o.text.strip()) for o in Select(self.d.find_element(By.ID, did)).options
+                if o.get_attribute("value") not in ("", "0", "-1", None) and "select" not in o.text.lower()]
 
     def list_villages(self, zone):
         """[(sro_id, sro_name, village_id, village_name)] for one revenue district (zone)."""

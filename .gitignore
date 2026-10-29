@@ -1,0 +1,37 @@
+# secrets and local settings
+.env
+.env.*
+!.env.example
+
+# data, outputs, templates (company data - never pushed)
+data/
+outputs/
+templates/
+*.xlsx
+*.xls
+*.pptx
+*.pdf
+*.gpkg
+*.geojson
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.qmd
+*.png
+*.jpg
+*.csv
+*.sql.gz
+*.dump
+*.log
+!sitesuit/assets/*.png
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+build/
+dist/
+*.egg-info/

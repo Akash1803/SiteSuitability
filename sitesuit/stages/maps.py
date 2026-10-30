@@ -25,17 +25,26 @@ def stale(site, ctx):
 PALETTE = ["#2ecc71", "#4a8df0", "#ff7f0e", "#a855f7", "#f0c419", "#e74c3c", "#1abc9c", "#ff69b4"]
 
 
-def overpass(q, cache):
+OVERPASS_MIRRORS = ("https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter")
+UA = {"User-Agent": "SiteSuitability/1.0 (SIPCOT site suitability study)"}
+
+
+def overpass(q, cache, log=print):
+    """OSM data for the maps. Public Overpass servers time out (504) when busy: try the configured server and two mirrors in
+    turn, waiting longer each round, before giving up."""
     if cache.exists():
         return json.loads(cache.read_text(encoding="utf-8"))
-    for attempt in range(3):
-        try:
-            r = requests.post(SETTINGS.overpass_url, data={"data": q}, timeout=240)
-            r.raise_for_status(); d = r.json()
-            cache.write_text(json.dumps(d), encoding="utf-8"); return d
-        except Exception as e:
-            err = e; time.sleep(10)
-    raise RuntimeError(f"Overpass failed: {err}")
+    urls = list(dict.fromkeys([SETTINGS.overpass_url, *OVERPASS_MIRRORS])); err = None
+    for attempt in range(4):
+        for u in urls:
+            try:
+                r = requests.post(u, data={"data": q}, headers=UA, timeout=240)
+                r.raise_for_status(); d = r.json()
+                cache.write_text(json.dumps(d), encoding="utf-8"); return d
+            except Exception as e:
+                err = e; log(f"  Overpass {u.split('/')[2]}: {str(e)[:90]}")
+        time.sleep(20 * (attempt + 1))
+    raise RuntimeError(f"Overpass failed on every server (try again in a few minutes): {err}")
 
 
 def build_conn(site, geom):

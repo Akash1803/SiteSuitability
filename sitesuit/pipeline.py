@@ -1,4 +1,5 @@
 """Runs the stages in order, records status in site.stage_run, resumes where it stopped."""
+import time
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -80,11 +81,38 @@ def open_site(name, project_dir=None):
     return s
 
 
+def _log_to_file(site, ctx):
+    """every log line also goes to <site>/_work/run_log.txt with the time, so a slow or failed run can be read afterwards"""
+    if getattr(ctx.log, "_to_file", False):
+        return
+    shown, path = ctx.log, site.work / "run_log.txt"
+
+    def log(msg):
+        shown(msg)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}  {msg}\n")
+        except OSError:
+            pass
+    log._to_file = True
+    ctx.log = log
+    if ctx.progress_cb:          # progress lines: every 25th, the last one and any error, so the file stays readable
+        bar = ctx.progress_cb
+
+        def progress(i, n, msg=""):
+            bar(i, n, msg)
+            if msg and (i == n or i % 25 == 0 or "rror" in msg or "403" in msg):
+                log(f"  {i}/{n} {msg}")
+        ctx.progress_cb = progress
+
+
 def run(site, stages=None, ctx=None, force=False, pause_at_review=False):
     """stages: list of stage names, or a callable returning the CURRENT selection (re-read before every stage, so the user
     can tick / untick while a run is going). Done stages are skipped unless force. Unticked stages are left out, and a stage
     whose required input stage is neither done nor about to run is left out too. Returns the last status."""
     ctx = ctx or Ctx()
+    _log_to_file(site, ctx)
     selected = stages if callable(stages) else (lambda s=list(stages or [x.NAME for x in STAGES]): s)
     ctx.selected = selected
     for st in STAGES:

@@ -13,6 +13,22 @@ NAME, TITLE = "parcels", "Survey parcels from Puvi"
 MIN_INSIDE_PCT, MIN_INSIDE_M2, FULL_PCT = 1.0, 50.0, 99.5
 
 
+def polys(geoms):
+    """valid polygon geometry (make_valid can return a collection with lines: keep the polygon parts)"""
+    import shapely
+    from shapely.geometry import MultiPolygon, Polygon
+    out = []
+    for g in shapely.make_valid(geoms.values):
+        if g is None or g.is_empty:
+            out.append(None); continue
+        if isinstance(g, (Polygon, MultiPolygon)):
+            out.append(g); continue
+        ps = [p for p in getattr(g, "geoms", []) if isinstance(p, (Polygon, MultiPolygon))]
+        parts = [q for p in ps for q in (p.geoms if isinstance(p, MultiPolygon) else [p])]
+        out.append(MultiPolygon(parts) if len(parts) > 1 else (parts[0] if parts else None))
+    return gpd.GeoSeries(out, index=geoms.index, crs=geoms.crs)
+
+
 def read_boundary(path):
     g = gpd.read_file(path)
     g = g.set_crs(4326) if g.crs is None else g.to_crs(4326)
@@ -35,7 +51,7 @@ def run(site, ctx):
     gpd.GeoDataFrame({"site": [site.name]}, geometry=[geom], crs=4326).to_file(site.boundary, driver="GeoJSON")
     site.site_id = db.upsert_site(site.name, site.root, geom.wkt)
     U = utm_epsg(geom.centroid.x)
-    bnd_m = gpd.GeoSeries([geom], crs=4326).to_crs(U).iloc[0]
+    bnd_m = gpd.GeoSeries([geom], crs=4326).to_crs(U).make_valid().iloc[0]
     log(f"boundary {bnd_m.area / ACRE_M2:.2f} acres (map), UTM EPSG:{U}")
 
     loaders.load_revenue_villages(log)
@@ -47,13 +63,15 @@ def run(site, ctx):
     missing = loaders.ensure_puvi([v[0] for v in vills], log)
 
     with db.connect() as c:
-        rows = c.execute("""SELECT vcode, survey_no, ST_AsBinary(ST_Union(geom)) FROM cadastral.puvi_survey
+        rows = c.execute("""SELECT vcode, survey_no, ST_AsBinary(ST_Union(ST_MakeValid(geom))) FROM cadastral.puvi_survey
                             WHERE vcode = ANY(%s) AND ST_Intersects(geom, ST_GeomFromText(%s, 4326)) GROUP BY vcode, survey_no""",
                          ([v[0] for v in vills], geom.wkt)).fetchall()
         frows = c.execute("""SELECT vcode, kide, survey_no, subdiv_no, ST_AsBinary(geom) FROM cadastral.puvi_fmb
                              WHERE vcode = ANY(%s) AND ST_Intersects(geom, ST_GeomFromText(%s, 4326))""", ([v[0] for v in vills], geom.wkt)).fetchall()
     sv = gpd.GeoDataFrame([{"village_code": r[0], "survey_no": r[1]} for r in rows], geometry=[wkb.loads(bytes(r[2])) for r in rows], crs=4326).to_crs(U)
     sv["puvi_acre"] = (sv.area / ACRE_M2).round(4)
+    sv["geometry"] = polys(sv.geometry)       # Puvi shapes are sometimes self-intersecting: repair before clipping
+    sv = sv[sv.geometry.notna()].copy()
     sv["geometry"] = sv.geometry.intersection(bnd_m)
     sv["inside_m2"] = sv.area
     sv["inside_acre"] = (sv.inside_m2 / ACRE_M2).round(4)
@@ -77,6 +95,8 @@ def run(site, ctx):
     if len(f):
         f = f[[k in want for k in zip(f.village_code, f.survey_no)]].to_crs(U)
         f["plot_acre_full"] = (f.area / ACRE_M2).round(4)
+        f["geometry"] = polys(f.geometry)
+        f = f[f.geometry.notna()].copy()
         f["geometry"] = f.geometry.intersection(bnd_m)
         f = f[~f.geometry.is_empty].copy()
         f["plot_acre_inside"] = (f.area / ACRE_M2).round(4)

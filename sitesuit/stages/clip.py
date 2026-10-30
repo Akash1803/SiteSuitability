@@ -32,25 +32,37 @@ def fetch(pending, ctx, show=False):
     d = _driver(show)
 
     def sel(eid, val):
-        WebDriverWait(d, 15).until(EC.element_to_be_clickable((By.ID, eid)))
-        Select(d.find_element(By.ID, eid)).select_by_value(val); time.sleep(1)
+        # wait for the option itself (the taluk / village lists load after the parent is chosen) instead of a fixed pause
+        WebDriverWait(d, 15).until(lambda _: d.find_elements(By.CSS_SELECTOR, f"#{eid} option[value='{val}']"))
+        Select(d.find_element(By.ID, eid)).select_by_value(val)
+
+    def options():   # one script call (reading 170 options one by one through the driver took ~14 s)
+        return [t for t in d.execute_script(
+            "return Array.from(document.querySelectorAll('#subDivNo_integration option')).map(o => o.text.trim())") if t]
+
+    def read_subs(sn):
+        box = d.find_element(By.ID, "surveyNo_integration"); box.clear(); box.send_keys(sn)
+        ActionChains(d).move_to_element(d.find_element(By.ID, "subDivNo_integration")).click().perform()  # leaving the box asks CLIP
+        try:
+            WebDriverWait(d, 8, poll_frequency=0.2).until(lambda _: options())
+        except Exception:
+            pass
+        return options()
+    last = None
     try:
         for i, (vc, sn) in enumerate(pending, 1):
             if ctx.stopped():
                 break
             if i % 250 == 0:
-                d.quit(); d = _driver(show)
-            dd, tt, vv = split_vcode(vc)
+                d.quit(); d = _driver(show); last = None
             try:
-                d_, t_, v_ = vc.split("_"); sel("dist", d_); sel("taluk", t_); sel("village", v_)
-                box = d.find_element(By.ID, "surveyNo_integration"); box.clear(); box.send_keys(sn); time.sleep(2)
-                dd_el = d.find_element(By.ID, "subDivNo_integration")
-                ActionChains(d).move_to_element(dd_el).click().perform(); time.sleep(2)
-                subs = [o.text.strip() for o in d.find_elements(By.XPATH, "//select[@id='subDivNo_integration']/option") if o.text.strip()]
+                if vc != last:                      # same village as the survey before: the dropdowns are already set
+                    d_, t_, v_ = vc.split("_"); sel("dist", d_); sel("taluk", t_); sel("village", v_); last = vc
+                subs = read_subs(sn) or read_subs(sn)    # an empty list once: ask again before calling it "no subdivision"
                 rows = [(vc, sn, s, "Success") for s in subs] or [(vc, sn, "-", "No Subdivision")]
                 status = "Success"
             except Exception as e:  # keep going; the survey is retried on the next run
-                rows, status = [], f"Error: {repr(e)[:120]}"
+                rows, status, last = [], f"Error: {repr(e)[:120]}", None
             with db.connect() as c:
                 if rows:
                     c.execute("DELETE FROM portal.clip_subdivision WHERE vcode = %s AND survey_no = %s", (vc, sn))

@@ -12,7 +12,7 @@ ORDER = ["Water body", "Channel", "Temple/Church/Mosque", "Burial", "Village sit
 
 
 def category(flag, land_type):
-    f = (flag or "").strip()
+    f = flag.strip() if isinstance(flag, str) else ""
     if f and f != "nan":
         return f
     return "Other government poramboke" if str(land_type) == "Poramboke" else ""

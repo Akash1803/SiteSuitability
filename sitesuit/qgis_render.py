@@ -200,6 +200,25 @@ if "region_wide" in ONLY:
             continue
         pt = vis.poleOfInaccessibility(500)[0].asPoint(); lblw[f["district"]] = [pt.x(), pt.y()]
     json.dump({"ext": [rext.xMinimum(), rext.yMinimum(), rext.xMaximum(), rext.yMaximum()], "dlab": lblw}, open(OUT + "/_region_wide.json", "w"))
+if "edges" in ONLY:
+    boxes = json.load(open(A["edge_boxes"], encoding="utf-8"))
+    ef = QgsVectorLayer(A["subdiv_full"], "ef", "ogr")       # neighbours: faint outlines, no labels
+    ef.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({"color": "0,0,0,0", "outline_color": "255,255,255,140", "outline_width": "0.2"})))
+    tf2 = QgsTextFormat(); f2_ = QFont("Arial"); f2_.setBold(True); tf2.setFont(f2_); tf2.setSize(7.5); tf2.setColor(QColor("#ffffff"))
+    b2 = QgsTextBufferSettings(); b2.setEnabled(True); b2.setSize(0.9); b2.setColor(QColor("#000000")); tf2.setBuffer(b2)
+    redb = nofill(QgsVectorLayer(A["boundary"], "rb", "ogr"), "#ff1744", 1.0)
+    for key, bb_ in boxes.items():
+        es = QgsVectorLayer(A["subdiv_full"], "es", "ogr"); es.setSubsetString(f"\"unique_id\" LIKE '{key}/%'")   # this survey: yellow + numbers
+        es.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({"color": "255,235,59,70", "outline_color": "#ffeb3b", "outline_width": "0.5"})))
+        pl2 = QgsPalLayerSettings(); pl2.fieldName = "regexp_substr(\"unique_id\", '[^_]+$')"; pl2.isExpression = True; pl2.setFormat(tf2)
+        es.setLabeling(QgsVectorLayerSimpleLabeling(pl2)); es.setLabelsEnabled(True)
+        rr = QgsCoordinateTransform(QgsCoordinateReferenceSystem("EPSG:4326"), WEB, P).transformBoundingBox(QgsRectangle(*bb_))
+        ext_ = fit(rr, 1.25, 640, 440)
+        ms = QgsMapSettings(); ms.setLayers([redb, es, ef, sat]); ms.setDestinationCrs(WEB); ms.setOutputSize(QSize(640, 440)); ms.setExtent(ext_); ms.setOutputDpi(96)
+        ms.setFlag(QgsMapSettings.DrawLabeling, True); ms.setFlag(QgsMapSettings.Antialiasing, True)
+        img = QImage(QSize(640, 440), QImage.Format_ARGB32); img.fill(0); pa = QPainter(img)
+        j = QgsMapRendererCustomPainterJob(ms, pa); j.start(); j.waitForFinished(); pa.end()
+        img.save(A["edges_dir"] + "/" + key + ".png")
 if ONLY:
     json.dump({"only": sorted(ONLY)}, open(OUT + "/_render_only.json", "w"))
 else:

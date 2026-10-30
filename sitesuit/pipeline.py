@@ -40,8 +40,14 @@ class Ctx:
 REQUIRES = {"clip": ("parcels",), "areg": ("clip",), "glv": ("parcels",), "master": ("areg",), "crop": ("master",),
             "landcost": ("master", "glv"), "fmb": ("parcels",), "maps": ("master",), "streetview": ("maps",), "soil": ("master", "maps"), "sensitive": ("master", "maps"), "govtland": ("master", "maps"), "glvmap": ("master", "maps", "glv"), "owners": ("master", "maps"), "companies": ("master", "maps"), "dimensions": ("maps",), "regional": ("maps",), "sitephotos": ("maps",),
             "summary": ("master",), "ppt": ("master",)}
+REQUIRES["edges"] = ("master",)
 # what goes stale when a stage re-runs (optional inputs included)
 USES = {**REQUIRES, "master": ("areg", "glv"), "maps": ("master", "crop"), "govtland": ("master", "maps", "soil"), "ppt": ("master", "landcost", "maps", "crop", "streetview", "soil", "sensitive", "govtland", "glvmap", "owners", "companies", "dimensions", "regional", "sitephotos", "summary")}
+
+
+for _k, _v in list(REQUIRES.items()):          # everything built on the master Excel also uses the edge decisions
+    if "master" in _v and _k != "edges":
+        USES[_k] = tuple(dict.fromkeys(USES.get(_k, _v) + ("edges",)))
 
 
 def dependents(stage):

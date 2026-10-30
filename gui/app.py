@@ -164,7 +164,8 @@ class Main(QMainWindow):
 
     def show_banner(self, kind, text):
         self.banner_kind = kind; self.banner_text.setText(text)
-        self.banner_btn.setText({"glv": "Open village map Excel", "crop": "Open 06_Crop folder", "review": "Continue to GLV and costs"}.get(kind, "OK"))
+        self.banner_btn.setText({"glv": "Open village map Excel", "crop": "Open 06_Crop folder", "review": "Continue to GLV and costs",
+                                 "edges": "Open edge review"}.get(kind, "OK"))
         self.banner.show()
 
     def banner_action(self):
@@ -175,6 +176,10 @@ class Main(QMainWindow):
             self.open_path(s.root / "06_Crop")
         elif self.banner_kind == "review":
             self.banner.hide(); self.start(force=False, pause=False)
+        elif self.banner_kind == "edges":
+            from gui.edge_review import EdgeReview
+            if EdgeReview(s, self).exec():
+                self.banner.hide(); self.say("edge review saved - continuing"); self.start(force=False, pause=False)
 
     # ---------- actions ----------
     def pick_boundary(self):

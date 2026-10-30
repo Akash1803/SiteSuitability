@@ -170,3 +170,21 @@ CREATE TABLE IF NOT EXISTS site.document (
     created_at   timestamptz DEFAULT now(),
     UNIQUE (site_id, path)
 );
+
+-- edge review: what the user decided for each survey / subdivision the boundary cuts
+CREATE TABLE IF NOT EXISTS site.edge_decision (
+    site_id      int REFERENCES site.site(id) ON DELETE CASCADE,
+    level        text NOT NULL,                 -- 'survey' (key = vcode_survey) or 'subdiv' (key = unique_id)
+    key          text NOT NULL,
+    decision     text NOT NULL,                 -- Full / Part / Exclude
+    typed_acre   double precision,              -- optional area typed by the user (Part only)
+    default_decision text,
+    updated_at   timestamptz DEFAULT now(),
+    PRIMARY KEY (site_id, level, key)
+);
+CREATE TABLE IF NOT EXISTS site.edge_review (
+    site_id      int PRIMARY KEY REFERENCES site.site(id) ON DELETE CASCADE,
+    confirmed    boolean DEFAULT false,
+    full_pct     double precision DEFAULT 98,
+    updated_at   timestamptz DEFAULT now()
+);

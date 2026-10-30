@@ -200,6 +200,8 @@ def run(site, ctx):
     log(f"{len(rec)} records: " + ", ".join(f"{k} {v}" for k, v in rec.parcel_status.value_counts().items()))
     r = split_records(rec, fmb, vec, U, log)
     r = r[r.geometry.notna()].copy()
+    # unclipped subdivision shapes: the edge review uses them when a cut survey / subdivision is kept whole
+    gpd.GeoDataFrame({"unique_id": r.unique_id.values}, geometry=r.geometry.values, crs=U).to_crs(4326).to_file(site.work / "subdiv_full.geojson", driver="GeoJSON")
     bnd = gpd.read_file(site.boundary).to_crs(U).union_all()
     r["full_acre"] = (r.area / ACRE_M2).round(4)
     r["geometry"] = r.geometry.intersection(bnd)

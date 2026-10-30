@@ -9,6 +9,7 @@ Pick a site boundary, press **Run**, get the full preliminary site analysis:
 | 3 | A-register | Tamilnilam / tnagrisnet API | `04_Tamilnilam/Tamilnilam_AReg_*.xlsx` – **review point** |
 | 4 | Guideline value | TNReginet survey-wise search (Selenium) | `05_GLV/GLV_Output_*.xlsx`, `GLV_Village_Map_*.xlsx` |
 | 5 | Master Excel + subdivision parcels | stages 1-4 | `10_Excel/Master_Excel_*.xlsx`, `02_GIS_Data/*_Subdivision_Parcels.geojson` |
+| 5b | Edge review | surveys the boundary cuts: Full / Part / Exclude per survey, and per subdivision of a Part survey (optional typed area) - in the app, with a picture of each survey | decisions in `site.edge_decision`; applied to the master Excel + layer (`area_basis`) |
 | 6 | Crop data | `crop.survey_record` (statewide table) | crop columns in the master + layer; `06_Crop/Crop_Input_*.xlsx` when no data yet |
 | 7 | Tentative land cost | team template (RFCTLARR conditions 1 / 2) | `10_Excel/*_Tentative_Land_Cost_GLV.xlsx` |
 | 8 | Latest FMB sheets | collabland FMB portal (team downloader) | `09_FMB_Latest/<village>/<survey>/<survey>.pdf` |

@@ -213,6 +213,10 @@ def run(site, ctx):
     r["in_site"] = ~(r.split & (r.inside_acre < 0.0005))
     r["area_basis"] = np.where(r.split, "Geometry inside boundary (split survey)", "A-register")
     r["site_acre"] = np.where(r.split, r.inside_acre, r.areg_acre).round(4)
+    # no A-register record (the register has no entry for what CLIP lists): count the map area inside, never 0 or a guessed owner
+    noreg = pd.to_numeric(r.areg_acre, errors="coerce").isna() & ~r.split
+    r.loc[noreg, "site_acre"] = r.loc[noreg, "inside_acre"].round(4)
+    r.loc[noreg, "area_basis"] = "Map area (no A-register record)"
     r.loc[~r.in_site, "site_acre"] = 0.0
     sq = r.site_acre * ACRE_M2 * SQFT_PER_M2
     r["glv_sqft_area"] = np.where(r.glv_unit == "Square Feet", sq.round(0), np.nan)
@@ -220,6 +224,7 @@ def run(site, ctx):
     r["kide"] = np.where(r.sub_division == "-", r.survey_no, r.survey_no + "/" + r.sub_division)
     r["subdiv_no"] = r.sub_division; r["area_acre"] = r.site_acre
     r["ownership"] = np.where(r.government_priority == GOVT, "Govt", "Patta"); r["parcel_acre"] = r.inside_acre
+    r.loc[r.areg_status.astype(str) != "Success", "ownership"] = "Unknown (no A-register record)"
     for col in LEAD:
         if col not in r.columns:
             r[col] = None

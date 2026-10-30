@@ -168,6 +168,10 @@ def build_excel(site, a):
     summ = key.merge(summ, on=["village", "survey_no"], how="left")
     summ["site_acre"] = summ.areg_acre.where(~summ.split, summ.inside_acre).round(4)
     summ["area_basis"] = summ.split.map({False: "A-register (full survey inside)", True: "Geometry inside boundary (split survey)"})
+    noreg = summ.areg_acre.isna()          # the register has no record for the survey: map area inside, owner unknown
+    summ.loc[noreg, "site_acre"] = summ.loc[noreg, "inside_acre"].round(4)
+    summ.loc[noreg, "area_basis"] = "Map area (no A-register record)"
+    summ.loc[noreg, "ownership"] = "Unknown (no A-register record)"
     summ["_k"] = summ.survey_no.map(survey_sort_key); summ = summ.sort_values(["village", "_k"]).drop(columns="_k")
     vill = summ.groupby("village").agg(surveys=("survey_no", "count"), subdivisions=("subdivisions", "sum"), puvi_acre=("puvi_acre", "sum"),
                                        areg_acre=("areg_acre", "sum"), site_acre=("site_acre", "sum")).round(2).reset_index()

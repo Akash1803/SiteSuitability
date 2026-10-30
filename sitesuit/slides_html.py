@@ -51,7 +51,7 @@ def tbl(title, head, rows, total, base_total):
     return h
 
 
-own_rows = [("Government Land", d["own"]["Government Land"]), ("Patta Land", d["own"]["Patta Land"])]
+own_rows = list(d["own"].items())
 cls_rows = list(d["lclass"].items())
 rem_rows = list(d["rem"].items())
 css1 = """<style>
@@ -68,17 +68,20 @@ td.tam{font-family:"Noto Sans Tamil",Arial,sans-serif;font-size:31px;line-height
 .foot{margin-top:26px;font-size:32px;color:#555;text-align:center}
 </style>"""
 ab = d["abstract"]; GT_, PT_ = ab["govt_types"], ab["patta_types"]
+UNK_ = ab["total"].get("unknown", 0) > 0     # a column only when some surveys have no A-register record
 css1b = """<style>.abs th,.abs td{font-size:42px;padding:22px 12px;text-align:center}.abs td.v{text-align:left;padding-left:30px}
 .abs th.g{background:#1e6e36}.abs th.p{background:#1d53a8}.pies{display:flex;gap:60px;justify-content:center;margin-top:60px}
 .pie{width:1480px;border:3px solid #d6dde8;padding:36px 40px;display:flex;align-items:center;gap:50px}
 .pie h4{font-size:48px;color:#0b2e6b;margin-bottom:20px}.pie .lg{font-size:40px;line-height:1.7;color:#333}</style>"""
 html = BASE + css1 + css1b + '<div class="title navy">LAND ABSTRACT</div><div class="sec">OVERALL AREA SUMMARY (ACRES)</div><table class="abs">'
-html += f'<tr><th rowspan="2">Village</th><th class="g" colspan="{len(GT_) + 1}">Government Land</th><th class="p" colspan="{len(PT_) + 1}">Patta Land</th><th rowspan="2">TOTAL</th></tr><tr>'
+html += f'<tr><th rowspan="2">Village</th><th class="g" colspan="{len(GT_) + 1}">Government Land</th><th class="p" colspan="{len(PT_) + 1}">Patta Land</th>' + ('<th rowspan="2">No A-reg record</th>' if UNK_ else '') + '<th rowspan="2">TOTAL</th></tr><tr>'
 html += "".join(f'<th class="g sub">{t}</th>' for t in GT_) + '<th class="g sub">Total Govt</th>' + "".join(f'<th class="p sub">{t}</th>' for t in PT_) + '<th class="p sub">Total Patta</th></tr>'
 for r in ab["rows"] + [ab["total"]]:
     tot = r is ab["total"]
     html += f'<tr{" class=tot" if tot else ""}><td class="v">{r["village"]}</td>' + "".join(f'<td>{dash(r["govt"].get(t, 0))}</td>' for t in GT_) + f'<td><b>{f2(sum(r["govt"].values()))}</b></td>'
-    html += "".join(f'<td>{dash(r["patta"].get(t, 0))}</td>' for t in PT_) + f'<td><b>{f2(sum(r["patta"].values()))}</b></td><td><b>{f2(sum(r["govt"].values()) + sum(r["patta"].values()))}</b></td></tr>'
+    un = r.get("unknown", 0)
+    html += "".join(f'<td>{dash(r["patta"].get(t, 0))}</td>' for t in PT_) + f'<td><b>{f2(sum(r["patta"].values()))}</b></td>'
+    html += (f'<td>{dash(un)}</td>' if UNK_ else '') + f'<td><b>{f2(sum(r["govt"].values()) + sum(r["patta"].values()) + un)}</b></td></tr>'
 html += '</table>'
 def _pie(parts, title):
     tot = sum(v for _, _, v in parts) or 1; stops, acc = [], 0
@@ -88,7 +91,8 @@ def _pie(parts, title):
     return (f'<div class="pie"><div style="width:480px;height:480px;border-radius:50%;background:conic-gradient({",".join(stops)});flex:none"></div>'
             f'<div><h4>{title}</h4><div class="lg">{lg}</div></div></div>')
 PC = ["#1d53a8", "#64b5f6", "#ff9800", "#9575cd"]
-html += '<div class="pies">' + _pie([("#1d53a8", "Patta Land", d["patta_total"]), ("#81c784", "Government Land", d["gov_total"])], f"Land distribution (total {f2(A)} acres)")
+html += '<div class="pies">' + _pie([("#1d53a8", "Patta Land", d["patta_total"]), ("#81c784", "Government Land", d["gov_total"])]
+                                    + ([("#9e9e9e", "No A-register record", d["unknown_total"])] if d.get("unknown_total") else []), f"Land distribution (total {f2(A)} acres)")
 if len(PT_) > 1:
     html += _pie([(PC[k % len(PC)], t, ab["total"]["patta"].get(t, 0)) for k, t in enumerate(PT_)], f"Patta land type (total {f2(d['patta_total'])} acres)") + '</div>'
 else:   # one patta type only: show the land classification of the whole site instead

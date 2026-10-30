@@ -56,6 +56,8 @@ def run(site, ctx):
 
     loaders.load_revenue_villages(log)
     vills = loaders.villages_touching(geom.wkt)
+    # the revenue-village layer writes some names with a trailing full stop ('Chettypalayam.'): clean them for every output
+    vills = [(v[0], *[x.strip().rstrip(".").strip() if isinstance(x, str) else x for x in v[1:4]], *v[4:]) for v in vills]
     if not vills:
         raise RuntimeError("the boundary touches no Tamil Nadu revenue village")
     names = {v[0]: v for v in vills}

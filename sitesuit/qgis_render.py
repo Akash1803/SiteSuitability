@@ -123,9 +123,9 @@ kide_labels(pv)
 if not ONLY or "map_village" in ONLY:
     render([svm, pv, red(), sat], mext, "map_village.png", 150, 1, MW, MH, utm)
 po = QgsVectorLayer(PAR, "po", "ogr")
-po.addExpressionField("CASE WHEN \"ownership\" = 'Govt' THEN 'Government' WHEN \"land_type_english\" IN ('Dry', 'Wet') THEN 'Patta - ' || \"land_type_english\" ELSE 'Patta - Other' END",
+po.addExpressionField("CASE WHEN \"ownership\" = 'Govt' THEN 'Government' WHEN \"ownership\" LIKE 'Unknown%' THEN 'No A-register record' WHEN \"land_type_english\" IN ('Dry', 'Wet') THEN 'Patta - ' || \"land_type_english\" ELSE 'Patta - Other' END",
                       QgsField("own_class", QVariant.String))
-OWN = {"Patta - Dry": "#f5c242", "Patta - Wet": "#4a8df0", "Patta - Other": "#ff9800", "Government": "#2ecc71"}
+OWN = {"Patta - Dry": "#f5c242", "Patta - Wet": "#4a8df0", "Patta - Other": "#ff9800", "Government": "#2ecc71", "No A-register record": "#9e9e9e"}
 po.setRenderer(QgsCategorizedSymbolRenderer("own_class", [QgsRendererCategory(k, QgsFillSymbol.createSimple({"color": rgba(c, 208), "outline_color": "#555555", "outline_width": "0.2"}), k) for k, c in OWN.items()]))
 kide_labels(po)
 if not ONLY or "map_owner" in ONLY:

@@ -162,6 +162,7 @@ def slide_data(site, summ):
     A = float(s.site_acre.sum())
     row = lambda v: {"total": round(float(v), 2), "pct": round(float(v) / A * 100, 2)}
     gov = s[s.ownership == "Govt"].site_acre.sum(); pat = s[s.ownership == "Patta"].site_acre.sum()
+    unk = float(s[s.ownership.astype(str).str.startswith("Unknown")].site_acre.sum())   # the register has no record for these
     names = {"Dry": "Dry (Punjai)", "Wet": "Wet (Nanjai)", "Poramboke": "Poramboke (Government)", "Tharisu": "Tharisu (Waste land)", "Manavari": "Manavari (Rain-fed)"}
     g = s[s.ownership == "Govt"]
     rem = g.groupby(g.remarks.fillna("-").replace("-", "No remarks")).site_acre.sum().sort_values(ascending=False)
@@ -188,7 +189,8 @@ def slide_data(site, summ):
     ptypes = [t for t in ("Dry", "Wet") if ((s.ownership == "Patta") & (lt == t)).any()] + sorted(set(lt[s.ownership == "Patta"]) - {"Dry", "Wet"})
     def _ab(x, name):
         return {"village": name, "govt": {t: float(x[(x.ownership == "Govt") & (x.land_type_english.fillna("Other") == t)].site_acre.sum()) for t in gtypes},
-                "patta": {t: float(x[(x.ownership == "Patta") & (x.land_type_english.fillna("Other") == t)].site_acre.sum()) for t in ptypes}}
+                "patta": {t: float(x[(x.ownership == "Patta") & (x.land_type_english.fillna("Other") == t)].site_acre.sum()) for t in ptypes},
+                "unknown": float(x[x.ownership.astype(str).str.startswith("Unknown")].site_acre.sum())}
     abstract = {"govt_types": gtypes, "patta_types": ptypes, "rows": [_ab(x, v) for v, x in s.groupby("village")], "total": _ab(s, "Grand Total")}
     oc = []
     for t, c in (("Dry", "#f5c242"), ("Wet", "#4a8df0")):
@@ -199,6 +201,8 @@ def slide_data(site, summ):
     if other > 0:
         oc.append(("Patta - Other", other, "#ff9800"))
     oc.append(("Government", float(gov), "#2ecc71"))
+    if unk > 0:
+        oc.append(("No A-register record", unk, "#9e9e9e"))
     crops = []
     try:
         cg = pd.read_excel(site.master, sheet_name="Crops_Grown")
@@ -207,7 +211,8 @@ def slide_data(site, summ):
             crops = [{"crop": k, "acre": float(r.acre), "seasons": r.seasons} for k, r in eff.iterrows()]
     except ValueError:
         pass
-    return {"total": A, "own": {"Government Land": row(gov), "Patta Land": row(pat)},
+    return {"total": A, "own": {"Government Land": row(gov), "Patta Land": row(pat), **({"No A-register record": row(unk)} if unk > 0 else {})},
+            "unknown_total": unk,
             "lclass": {names.get(k, k): row(v) for k, v in s.groupby("land_type_english").site_acre.sum().sort_values(ascending=False).items()},
             "rem": {k: {"total": round(float(v), 2), "pct": round(float(v) / gov * 100, 2) if gov else 0} for k, v in rem.items()},
             "gov_total": float(gov), "patta_total": float(pat),

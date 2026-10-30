@@ -15,7 +15,10 @@ class EdgeReview(QDialog):
         super().__init__(parent)
         self.site = site
         self.setWindowTitle(f"Edge review - {site.name}")
-        self.resize(1250, 860)
+        # fit the screen (on a scaled display a fixed 860 px window pushed the Save button below the taskbar)
+        from PySide6.QtGui import QGuiApplication
+        scr = (parent.screen() if parent is not None else QGuiApplication.primaryScreen()).availableGeometry()
+        self.resize(min(1250, int(scr.width() * 0.95)), min(860, int(scr.height() * 0.88)))
         sv, sub = edges.candidates(site)
         self.sv, self.sub = sv, sub
         dec = edges.decisions(site.site_id)
@@ -29,8 +32,10 @@ class EdgeReview(QDialog):
         row.addWidget(QLabel("Default: Full when at least"))
         self.pct = QSpinBox(); self.pct.setRange(50, 100); self.pct.setValue(int(full_pct)); self.pct.setSuffix(" % inside")
         row.addWidget(self.pct)
-        b = QPushButton("Apply this default to all surveys"); b.clicked.connect(self.apply_default); row.addWidget(b); row.addStretch(1)
+        b = QPushButton("Apply this default to all surveys"); b.setAutoDefault(False); b.clicked.connect(self.apply_default); row.addWidget(b); row.addStretch(1)
         self.total = QLabel(); row.addWidget(self.total)
+        top_ok = QPushButton("Save and continue"); top_ok.setStyleSheet("font-weight:600;padding:4px 14px")
+        top_ok.clicked.connect(self.save_ok); row.addWidget(top_ok)      # also at the top, always visible
         v.addLayout(row)
         area = QScrollArea(); area.setWidgetResizable(True); inner = QWidget(); self.lay = QVBoxLayout(inner); area.setWidget(inner); v.addWidget(area, 1)
         self.rows = []

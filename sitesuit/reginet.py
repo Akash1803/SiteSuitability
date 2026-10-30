@@ -10,6 +10,12 @@ class SessionExpired(Exception):
     pass
 
 
+def _err(e):
+    """error text with its message (repr of a selenium exception drops the message, e.g. the 403 from TNReginet)"""
+    m = (getattr(e, "msg", None) or str(e) or "").strip().replace("Message: ", "")
+    return f"{type(e).__name__}: {m}" if m else type(e).__name__
+
+
 class Reginet:
     def __init__(self, show=False, log=print):
         self.show, self.log, self.d, self.w = show, log, None, None
@@ -27,6 +33,7 @@ class Reginet:
         o.add_experimental_option("excludeSwitches", ["enable-automation"]); o.add_experimental_option("useAutomationExtension", False)
         svc = Service(popen_kw={"creation_flags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)})
         self.d = webdriver.Chrome(service=svc, options=o)
+        self.d.set_page_load_timeout(60)        # the home page sometimes hangs for minutes: fail and start again instead
         self.d.get(URL); self.close_popup(); self.close_smoke(2)
         self.w = WebDriverWait(self.d, 40)
 
@@ -43,10 +50,10 @@ class Reginet:
             self.start()
 
     # ---------- popups ----------
-    def close_popup(self):
+    def close_popup(self, wait=2):
         from selenium.webdriver.common.by import By
         from selenium.webdriver.common.keys import Keys
-        time.sleep(2)
+        time.sleep(wait)
         for by, sel in [(By.CSS_SELECTOR, ".modal .close"), (By.CSS_SELECTOR, ".modal-header .close"), (By.XPATH, "//button[normalize-space(text())='×']")]:
             for el in self.d.find_elements(by, sel):
                 try:
@@ -119,8 +126,8 @@ class Reginet:
         self.ensure()
         if self.expired():
             self.recover()
-        self.close_popup(); self.close_smoke(1)
-        self.w.until(EC.element_to_be_clickable((By.ID, "surveyRadio"))).click(); time.sleep(1)
+        self.close_popup(wait=0); self.close_smoke(0.3)       # the welcome popup only comes with a fresh page load
+        self.w.until(EC.element_to_be_clickable((By.ID, "surveyRadio"))).click()
 
     def _select(self, chain):
         """chain: [(dropdown id, value)], each waits for its options (re-fires the previous onchange on a website error)."""
@@ -159,7 +166,15 @@ class Reginet:
     def list_villages(self, zone):
         """[(sro_id, sro_name, village_id, village_name)] for one revenue district (zone)."""
         out = []
-        self._survey_mode(); self._select([("districtList", zone), ("SROList", None)])
+        for attempt in range(4):   # TNReginet answers 403 now and then for a few minutes: start again on a fresh page, waiting longer each time
+            try:
+                self._survey_mode(); self._select([("districtList", zone), ("SROList", None)])
+                break
+            except Exception as e:
+                if attempt == 3:
+                    raise
+                self.log(f"  SRO list of district {zone}: {_err(e)[:100]} - trying again in {30 * (attempt + 1)} s")
+                self.quit(); time.sleep(30 * (attempt + 1))
         sros = self.options("SROList")
         for sid, sname in sros:
             for attempt in range(2):
@@ -168,7 +183,7 @@ class Reginet:
                     out += [(sid, sname, vid, vname) for vid, vname in self.options("villageList")]
                     break
                 except Exception as e:
-                    self.log(f"  SRO {sname}: {repr(e)[:80]} - retrying"); self.recover()
+                    self.log(f"  SRO {sname}: {_err(e)[:100]} - retrying"); self.recover()
         return out
 
     # ---------- survey search ----------
@@ -190,7 +205,7 @@ class Reginet:
                                        lambda d: self.smoke_open(), lambda d: self.expired()))
                 if self.expired():
                     raise SessionExpired("after search")
-                err = self.close_smoke(1)
+                err = self.close_smoke(0.5)
                 if err is None:
                     break
                 time.sleep(2)
@@ -202,12 +217,13 @@ class Reginet:
                 while True:
                     try:
                         trs = self.w.until(EC.presence_of_all_elements_located((By.XPATH, "//table[@id='searchTable']/tbody/tr")))
-                        for tr in trs:
-                            td = tr.find_elements(By.TAG_NAME, "td")
+                        # the whole page in one script call (cell by cell through the driver took seconds per page)
+                        cells = self.d.execute_script("return Array.from(document.querySelectorAll('#searchTable tbody tr'))"
+                                                      ".map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim()))")
+                        for td in cells:
                             if len(td) >= 6:
-                                rows.append({"Subdivision Number": td[1].text.strip(), "Guideline_Value_British": td[2].text.strip(),
-                                             "Guideline_Value_Metric": td[3].text.strip(), "Land_Classification": td[4].text.strip(),
-                                             "Effective_Start_Date": td[5].text.strip()})
+                                rows.append({"Subdivision Number": td[1], "Guideline_Value_British": td[2], "Guideline_Value_Metric": td[3],
+                                             "Land_Classification": td[4], "Effective_Start_Date": td[5]})
                         try:
                             nb = self.d.find_element(By.LINK_TEXT, "Next")
                             if "disabled" in (nb.get_attribute("class") or "") or not nb.is_displayed():
@@ -219,11 +235,11 @@ class Reginet:
                         continue
                 status = "Success" if rows else "Error: no rows"
             try:
-                b = self.w.until(EC.element_to_be_clickable((By.ID, "backFeedBack"))); self.d.execute_script("arguments[0].click();", b); time.sleep(1)
+                b = self.w.until(EC.element_to_be_clickable((By.ID, "backFeedBack"))); self.d.execute_script("arguments[0].click();", b)
             except Exception:
                 self.d.get(URL); self.close_popup(); self.close_smoke(1)
             return status, rows
         except SessionExpired as e:
             self.recover(); return f"Error: session expired ({e})", []
         except Exception as e:
-            self.quit(); return f"Error: {repr(e)[:150]}", []
+            self.quit(); return f"Error: {_err(e)[:150]}", []

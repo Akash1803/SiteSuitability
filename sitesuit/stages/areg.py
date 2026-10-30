@@ -1,8 +1,9 @@
-"""Stage 3 - A-register (Tamilnilam / tnagrisnet) for every CLIP subdivision, 4 requests in parallel, cached in portal.areg.
+"""Stage 3 - A-register (Tamilnilam / tnagrisnet) for every CLIP subdivision, 4 requests in parallel on kept-alive connections, cached in portal.areg.
 Writes the raw Excel and the consolidated A-register Excel (village / land type / govt-patta / sensitive flags / survey summary / records)."""
 import io
 import contextlib
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -30,15 +31,35 @@ def _clean_owner(n):
     return " ".join(re.sub(r"[^\w\s஀-௿]", "", n).split()).strip()
 
 
+_local = threading.local()
+
+
+def _session():
+    """one kept-alive connection per worker thread: a new TLS connection per record cost ~1.2 s, a kept-alive one ~0.15 s"""
+    if getattr(_local, "s", None) is None:
+        _local.s = requests.Session()
+    return _local.s
+
+
+def _conn():
+    """one database connection per worker thread (opening one per record cost ~0.16 s)"""
+    c = getattr(_local, "c", None)
+    if c is None or c.closed:
+        import psycopg
+        from ..config import SETTINGS
+        c = _local.c = psycopg.connect(SETTINGS.database_url, autocommit=True)
+    return c
+
+
 def fetch_one(vc, sn, sd):
     d, t, v = split_vcode(vc)
     url = API.format(d=d, t=t, v=v, s=sn, sd=sd if sd not in ("", "-") else "-")
     j, err = None, None
     for _ in range(3):
         try:
-            r = requests.get(url, timeout=40); r.raise_for_status(); j = r.json(); break
+            r = _session().get(url, timeout=40); r.raise_for_status(); j = r.json(); break
         except Exception as e:
-            err = e; time.sleep(3)
+            err = e; _local.s = None; time.sleep(3)
     rec = {k: None for _, k in FIELDS}
     if j is None:
         return f"Error: {repr(err)[:100]}", rec
@@ -57,10 +78,14 @@ def fetch_one(vc, sn, sd):
 
 
 def _store(vc, sn, sd, status, rec):
-    with db.connect() as c:
-        c.execute("""INSERT INTO portal.areg (vcode, survey_no, sub_division, status, record) VALUES (%s,%s,%s,%s,%s)
-                     ON CONFLICT (vcode, survey_no, sub_division) DO UPDATE SET status=EXCLUDED.status, record=EXCLUDED.record, fetched_at=now()""",
-                  (vc, sn, sd, status, Jsonb(rec)))
+    sql = """INSERT INTO portal.areg (vcode, survey_no, sub_division, status, record) VALUES (%s,%s,%s,%s,%s)
+             ON CONFLICT (vcode, survey_no, sub_division) DO UPDATE SET status=EXCLUDED.status, record=EXCLUDED.record, fetched_at=now()"""
+    try:
+        _conn().execute(sql, (vc, sn, sd, status, Jsonb(rec)))
+    except Exception:            # connection dropped: open a fresh one for this record
+        _local.c = None
+        with db.connect() as c:
+            c.execute(sql, (vc, sn, sd, status, Jsonb(rec)))
 
 
 def run(site, ctx):
@@ -71,7 +96,7 @@ def run(site, ctx):
     with db.connect() as c:
         have = {(a, b, s) for a, b, s in c.execute("SELECT vcode, survey_no, sub_division FROM portal.areg WHERE status = 'Success'")}
     pending = [k for k in keys if k not in have]
-    ctx.log(f"A-register: {len(keys)} subdivisions, {len(keys) - len(pending)} cached, {len(pending)} to fetch (about {len(pending) * 0.9 / 60:.0f} min)")
+    ctx.log(f"A-register: {len(keys)} subdivisions, {len(keys) - len(pending)} cached, {len(pending)} to fetch (about {len(pending) / 10 / 60:.0f} min)")
 
     def job(k):
         if ctx.stopped():

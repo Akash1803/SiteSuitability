@@ -3,6 +3,7 @@ Step 1: map each revenue village to its TNReginet SRO / village ids (matched by 
 Step 2: survey-wise search for every survey not yet in portal.glv. Output GLV_Output_<site>.xlsx (GLV_Survey_Wise + Survey_Summary)."""
 import difflib
 import re
+import time
 
 import geopandas as gpd
 import pandas as pd
@@ -97,10 +98,17 @@ def run(site, ctx):
         try:
             for attempt in range(3):
                 left = []
+                pause = 0
                 for i, (vc, sn) in enumerate(pending, 1):
                     if ctx.stopped():
                         raise RuntimeError("stopped by user")
                     st, rows = rg.survey(*vmap[vc], sn)
+                    while "403" in st and pause < 600:   # TNReginet refuses for a few minutes now and then: wait it out, do not burn the list
+                        pause = min(max(60, pause * 2), 600)
+                        ctx.log(f"GLV: TNReginet answers 403 Forbidden - waiting {pause} s"); rg.quit(); time.sleep(pause)
+                        st, rows = rg.survey(*vmap[vc], sn)
+                    if "403" not in st:
+                        pause = 0
                     if st not in DONE:   # the portal often times out once; one immediate retry on a fresh page
                         ctx.log(f"GLV {vc} survey {sn}: {st} - retrying once"); rg.recover() if rg.d else None
                         st, rows = rg.survey(*vmap[vc], sn)

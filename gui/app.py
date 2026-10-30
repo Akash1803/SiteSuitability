@@ -21,6 +21,17 @@ from sitesuit.stages import STAGES                              # noqa: E402
 COLORS = {"done": "#43a047", "running": "#1e88e5", "failed": "#e53935", "waiting": "#fb8c00", "review": "#8e24aa", "pending": "#9e9e9e", "skipped": "#9e9e9e"}
 
 
+def same_boundary(a, b):
+    """True when two boundary files hold the same shape (the app keeps its own copy of the file you picked, so the paths
+    always differ - comparing paths asked 'another boundary?' on every run)"""
+    try:
+        import geopandas as gpd
+        ga = gpd.read_file(a).to_crs(4326).union_all(); gb = gpd.read_file(b).to_crs(4326).union_all()
+        return ga.symmetric_difference(gb).area <= 1e-6 * max(ga.area, 1e-12)
+    except Exception:
+        return False
+
+
 class Worker(QObject):
     log = Signal(str)
     progress = Signal(int, int, str)
@@ -220,7 +231,7 @@ class Main(QMainWindow):
         # an existing site with a different boundary file: rebuild from stage 1 (otherwise the old boundary would be reused)
         if site.site_id and "parcels" in stages and not force and self.boundary.text().strip():
             new_b = Path(self.boundary.text().strip()).resolve()
-            if new_b != Path(site.boundary).resolve():
+            if new_b != Path(site.boundary).resolve() and not same_boundary(new_b, site.boundary):
                 if QMessageBox.question(self, "Site already exists",
                                         f"'{site.name}' already exists with another boundary.\n\nUse the new boundary and rebuild every stage?\n"
                                         f"(Choose No and type a new site name to keep the old one.)") != QMessageBox.Yes:

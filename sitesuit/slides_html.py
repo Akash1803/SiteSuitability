@@ -51,6 +51,36 @@ def tbl(title, head, rows, total, base_total):
     return h
 
 
+def dc_land_html(x):
+    def t(title, head, rows, total):
+        h = (f'<div class="sec">{title}</div><table><tr><th rowspan="2" style="width:190px">S. No.</th><th rowspan="2">{head}</th><th colspan="3">Area (Acres)</th>'
+             '<th rowspan="2" style="width:470px">Percentage (%)</th></tr><tr><th class="sub">Non-DC Land</th><th class="sub">DC Land</th><th class="sub">Total</th></tr>')
+        for i, (name, v) in enumerate(rows, 1):
+            tam = ' class="tam"' if any("஀" <= ch <= "௿" for ch in name) else ""
+            h += (f'<tr><td class="c">{i}</td><td{tam}>{name}</td><td class="c">{dash(v["non_dc"])}</td><td class="c dc">{dash(v["dc"])}</td>'
+                  f'<td class="c">{f2(v["total"])}</td><td class="c">{pct(v["pct"])}</td></tr>')
+        return h + (f'<tr class="tot"><td colspan="2" class="c">TOTAL</td><td class="c">{f2(total["non_dc"])}</td><td class="c dc">{f2(total["dc"])}</td>'
+                    f'<td class="c">{f2(total["total"])}</td><td class="c">100.00%</td></tr></table>')
+    css = """<style>
+.sec{background:#0b2e6b;color:#fff;font-size:46px;font-weight:700;text-align:center;padding:20px 0;margin-top:24px}
+table{width:100%;border-collapse:collapse;font-size:40px}
+th{background:#0b2e6b;color:#fff;font-weight:700;padding:15px 10px;border:2px solid #fff}
+th.sub{background:#2f5aa6;font-size:36px}
+td{padding:13px 32px;border:2px solid #d6dde8;background:#fff}
+td.c{text-align:center}
+td.dc{background:#fff2cc}
+tr.tot td{background:#dfe9f8;color:#1a1ae6;font-weight:700}
+tr.tot td.dc{background:#ffe08a}
+td.tam{font-family:"Noto Sans Tamil",Arial,sans-serif;font-size:31px;line-height:1.25}
+</style>"""
+    h = BASE + css + '<div class="title navy">LAND SUMMARY</div>'
+    h += t("OWNERSHIP CLASSIFICATION (ACRES)", "Ownership Classification", x["own"], x["total"])
+    h += t("LAND CLASSIFICATION (ACRES)", "Land Classification", x["lclass"], x["total"])
+    if x["rem"]:
+        h += t("PORAMBOKE LAND REMARKS (ACRES)", "Remarks", x["rem"], x["gov_total"])
+    return h
+
+
 own_rows = list(d["own"].items())
 cls_rows = list(d["lclass"].items())
 rem_rows = list(d["rem"].items())
@@ -99,6 +129,8 @@ else:   # one patta type only: show the land classification of the whole site in
     html += _pie([(PC[k % len(PC)], n.split(" (")[0], v["total"]) for k, (n, v) in enumerate(d["lclass"].items())], f"Land classification (total {f2(A)} acres)") + '</div>'
 _sp = d.get("split_surveys", 0)
 html += f'<div class="foot">Area = A-register extent' + (f'; {_sp} split edge survey{"s are" if _sp != 1 else " is"} counted at the area inside the boundary' if _sp else '') + '.</div>'
+if d.get("dc_land"):   # the site has a DC-land list: the land summary is the Non-DC / DC / Total tables (as the Perungalathur deck)
+    html = dc_land_html(d["dc_land"])
 shot(html + END, "s06_land_summary")
 
 # ---------------- 2. GLV SUMMARY ----------------

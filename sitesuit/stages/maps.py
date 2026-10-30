@@ -17,7 +17,7 @@ from .. import db
 from ..config import SETTINGS
 
 NAME, TITLE = "maps", "Connectivity + map renders"
-RENDER_VERSION = 3      # bump when the map style changes: finished sites re-render on the next Run
+RENDER_VERSION = 4      # bump when the map style changes: finished sites re-render on the next Run
 
 
 def stale(site, ctx):

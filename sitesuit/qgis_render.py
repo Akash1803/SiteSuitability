@@ -89,6 +89,7 @@ if not ONLY:
     vr = QgsVectorLayer(C + "|layername=roads", "vr", "ogr"); vr.setSubsetString(f"osm_id IN ({idlist(A['village_road_ids'])})")
     vr.setRenderer(QgsSingleSymbolRenderer(QgsLineSymbol.createSimple({"color": "#ff1a1a", "width": "1.1"}))); lab(vr, '"name"', 11, "#ffff00")
     rb = QgsRectangle(bb); rb.grow(max(1500, bb.width() * 0.4)); info["road"] = render([bw, vr, mdr, rail, sat], fit(rb, 1.0), "road_connectivity_raw.png")
+    render([bw, sat], fit(rb, 1.0), "street_view_raw.png")      # same frame, without the road highlights (street view slide)
     pole = g.poleOfInaccessibility(5)[0].asPoint(); sc = g.centroid().asPoint()
     info.update(site_c=[sc.x(), sc.y()], site_pole=[pole.x(), pole.y()])
     # region / location

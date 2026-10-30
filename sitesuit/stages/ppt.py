@@ -196,7 +196,7 @@ def _dc_glv(s, pa, summ):
     for name, m in (("Acres", acre_m), ("Square feet", sq_m), ("No data", ~acre_m & ~sq_m)):
         x = pa[m]
         u = {g: float(x[mm.reindex(x.index)].site_acre.sum()) for g, mm in groups}
-        if name == "No data" and u["total"] <= 0:
+        if name != "Acres" and u["total"] <= 0:      # no square-feet / no-data rows when there is nothing in them
             continue
         u["range"] = {}
         for g, mm in groups[:2]:
@@ -210,6 +210,29 @@ def _dc_glv(s, pa, summ):
             by_v.setdefault(hit.village.iloc[0], []).append(str(hit.survey_no.iloc[0]))
     txt = "; ".join(f"{v} survey nos. " + (_ranges([int(x) for x in sv]) if all(x.isdigit() for x in sv) else ", ".join(sv)) for v, sv in by_v.items())
     return {"split": split, "units": units, "patta_acre": float(pa.site_acre.sum()), "surveys_text": txt, "n_surveys": sum(len(v) for v in by_v.values())}
+
+
+def _dc_land(s, summ):
+    """land summary tables split into Non-DC / DC land (only with a DC-land list)"""
+    dcs = set(summ.get("dc_surveys") or [])
+    if not dcs:
+        return None
+    s = s.assign(dc=s.survey_uid.astype(str).isin(dcs))
+    A = float(s.site_acre.sum())
+
+    def split(x, base):
+        t = float(x.site_acre.sum())
+        return {"non_dc": float(x[~x.dc].site_acre.sum()), "dc": float(x[x.dc].site_acre.sum()), "total": t, "pct": t / base * 100 if base else 0}
+    own = [(n, split(s[s.ownership == k], A)) for k, n in (("Govt", "Government Land"), ("Patta", "Patta Land")) if (s.ownership == k).any()]
+    unk = s[s.ownership.astype(str).str.startswith("Unknown")]
+    if len(unk):
+        own.append(("No A-register record", split(unk, A)))
+    lc = s.assign(c=s.land_type_english.fillna("Other").where(s.ownership != "Govt", "Government"))
+    lcl = [(k, split(x, A)) for k, x in sorted(lc.groupby("c"), key=lambda kv: -kv[1].site_acre.sum())]
+    g = s[s.ownership == "Govt"]; G = float(g.site_acre.sum())
+    rem = g.remarks.fillna("").astype(str).str.strip().replace({"nan": "", "-": ""}).replace("", "No remarks")
+    rems = [(k, split(x, G)) for k, x in sorted(g.assign(r=rem).groupby("r"), key=lambda kv: -kv[1].site_acre.sum())]
+    return {"own": own, "lclass": lcl, "rem": rems, "total": split(s, A), "gov_total": split(g, G)}
 
 
 def slide_data(site, summ):
@@ -266,7 +289,7 @@ def slide_data(site, summ):
             crops = [{"crop": k, "acre": float(r.acre), "seasons": r.seasons} for k, r in eff.iterrows()]
     except ValueError:
         pass
-    return {"total": A, "dc_glv": _dc_glv(s, pa, summ), "own": {"Government Land": row(gov), "Patta Land": row(pat), **({"No A-register record": row(unk)} if unk > 0 else {})},
+    return {"total": A, "dc_glv": _dc_glv(s, pa, summ), "dc_land": _dc_land(s, summ), "own": {"Government Land": row(gov), "Patta Land": row(pat), **({"No A-register record": row(unk)} if unk > 0 else {})},
             "unknown_total": unk,
             "lclass": {names.get(k, k): row(v) for k, v in s.groupby("land_type_english").site_acre.sum().sort_values(ascending=False).items()},
             "rem": {k: {"total": round(float(v), 2), "pct": round(float(v) / gov * 100, 2) if gov else 0} for k, v in rem.items()},
@@ -282,7 +305,8 @@ def slide_data(site, summ):
 def compose_streetview(raw, out, AC, pins, info):
     """street-view map (pins on the road render) + one full-slide picture per pin that has a photo. Returns pin hotspots (px)."""
     e = info["road"]
-    o = Image.new("RGB", (W, H + B), (16, 58, 78)); o.paste(Image.open(raw / "road_connectivity_raw.png").convert("RGB"), (0, B)); d = ImageDraw.Draw(o)
+    base_img = raw / "street_view_raw.png"     # satellite + site boundary only (no road highlights outside the site)
+    o = Image.new("RGB", (W, H + B), (16, 58, 78)); o.paste(Image.open(base_img if base_img.exists() else raw / "road_connectivity_raw.png").convert("RGB"), (0, B)); d = ImageDraw.Draw(o)
     t = "STREET VIEW"; f = F(66); d.text(((W - d.textlength(t, font=f)) / 2, (B - 76) / 2), t, fill=(255, 235, 0), font=f)
     to3857 = lambda lon, lat: (lon * 20037508.34 / 180, math.log(math.tan((90 + lat) * math.pi / 360)) * 6378137)
     pxe = lambda x, y: ((x - e[0]) / (e[2] - e[0]) * W, B + (e[3] - y) / (e[3] - e[1]) * H)
@@ -294,8 +318,9 @@ def compose_streetview(raw, out, AC, pins, info):
         d.ellipse([x - 24, cy - 24, x + 24, cy + 24], fill=(255, 255, 255)); d.text((x - d.textlength(n, font=fn) / 2, cy - 20), n, fill=(16, 58, 78), font=fn)
         hot.append({"n": p["n"], "x": x - 40, "y": y - 124, "w": 80, "h": 130})
     qx, qy = pxe(*info["site_pole"]); lt = f"Site Boundary ({AC} Acres)"
-    if any(abs(h["x"] + 40 - qx) < 260 and abs(h["y"] + 124 - qy) < 90 for h in hot):
-        qy += 80   # keep the label clear of a pin
+    half = d.textlength(lt, font=F(36)) / 2 + 20
+    hits = lambda y: sum(1 for h in hot if h["x"] - half < qx < h["x"] + h["w"] + half and h["y"] - 30 < y < h["y"] + h["h"] + 30)
+    qy = min((qy + dy for dy in (0, -90, -180, 90, 180, -270)), key=lambda y: (hits(y), abs(y - qy)))   # keep the label off every pin
     d.text((qx - d.textlength(lt, font=F(36)) / 2, qy - 22), lt, fill=(255, 255, 255), font=F(36), stroke_width=4, stroke_fill=(0, 0, 0))
     lines = [f"{p['n']}. {p['label']}" + (f" ({p['date']})" if p.get("date") else "") for p in pins]
     any_photo = any(p.get("photo") for p in pins)

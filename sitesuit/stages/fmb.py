@@ -29,7 +29,7 @@ def run(site, ctx):
         if SETTINGS.fmb_cookie:
             cmd += ["--cookie", SETTINGS.fmb_cookie]
         p = subprocess.Popen(cmd, cwd=str(site.fmb_dir), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
-                             env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8"})
+                             env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8"}, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         n = 0
         for line in p.stdout:
             if ctx.stopped():

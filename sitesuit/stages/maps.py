@@ -196,6 +196,7 @@ def qgis_render(site, ctx, only=None):
     flag = raw / ("_render_only.json" if only else "_render_info.json"); flag.unlink(missing_ok=True)
     ctx.log(f"rendering {'+'.join(only) if only else 'satellite maps'} with QGIS ...")
     script = Path(__file__).resolve().parent.parent / "qgis_render.py"
-    p = subprocess.run(["cmd", "/c", str(SETTINGS.qgis_python), str(script), str(pj)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
+    p = subprocess.run(["cmd", "/c", str(SETTINGS.qgis_python), str(script), str(pj)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))   # no console window from the app
     if not flag.exists():   # QGIS may exit non-zero on shutdown after a good render
         raise RuntimeError("QGIS render failed: " + (p.stderr or p.stdout)[-800:])

@@ -658,7 +658,7 @@ def run(site, ctx):
     (out / "data.json").write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     ctx.log("building summary slides (headless Chrome) ...")
     p = subprocess.run([sys.executable, "-m", "sitesuit.slides_html", str(out)], cwd=str(Path(__file__).resolve().parents[2]), capture_output=True,
-                       text=True, encoding="utf-8", errors="replace", timeout=600)
+                       text=True, encoding="utf-8", errors="replace", timeout=600, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     if p.returncode != 0:
         raise RuntimeError("slide build failed: " + (p.stderr or p.stdout)[-800:])
     for f in list(out.glob("s*_*.html")) + [out / "data.json"]:
@@ -678,6 +678,6 @@ def export_pdf(site):
     pdf = site.ppt.with_suffix(".pdf")
     ps = (f"$pp = New-Object -ComObject PowerPoint.Application; try {{ $p = $pp.Presentations.Open('{site.ppt}', $true, $false, $false); "
           f"$p.SaveAs('{pdf}', 32); $p.Close() }} finally {{ $pp.Quit() }}")
-    subprocess.run(["powershell", "-NoProfile", "-Command", ps], check=True, timeout=300)
+    subprocess.run(["powershell", "-NoProfile", "-Command", ps], check=True, timeout=300, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     db.register_document(site.site_id, "pdf", pdf)
     return pdf

@@ -136,7 +136,16 @@ if pc.fields().indexOf("crop_group") >= 0:
     pc.addExpressionField("CASE WHEN \"crop_group\" = 'Cultivated' THEN 'Crop Land' WHEN \"crop_group\" = 'No crop survey record' THEN 'No Survey Data' ELSE 'Non-crop Land' END", QgsField("crop_cls", QVariant.String))
 else:
     pc.addExpressionField("'No Survey Data'", QgsField("crop_cls", QVariant.String))
+CROP_PAL = ["#2e7d32", "#c62828", "#6a1b9a", "#00838f", "#ef6c00", "#ad1457", "#1565c0", "#558b2f", "#4e342e", "#00695c"]   # same order as ppt.CROP_PAL: crop categories sorted by name
+crop_cats = sorted({str(f["crop_status"])[12:-1] for f in pc.getFeatures()
+                    if pc.fields().indexOf("crop_status") >= 0 and str(f["crop_status"]).startswith("Cultivated (")})
+if crop_cats:      # crop land coloured by what is grown (rice, mango, ...), the other classes as before
+    pc.removeExpressionField(pc.fields().indexOf("crop_cls"))
+    pc.addExpressionField("CASE WHEN \"crop_status\" LIKE 'Cultivated (%' THEN substr(\"crop_status\", 13, length(\"crop_status\") - 13) "
+                          "WHEN \"crop_group\" = 'No crop survey record' THEN 'No Survey Data' ELSE 'Non-crop Land' END", QgsField("crop_cls", QVariant.String))
 pc.setRenderer(QgsCategorizedSymbolRenderer("crop_cls", [
+    QgsRendererCategory(c, QgsFillSymbol.createSimple({"color": rgba(CROP_PAL[k % len(CROP_PAL)], 225), "outline_color": "#333333", "outline_width": "0.25"}), c)
+    for k, c in enumerate(crop_cats)] + [
     QgsRendererCategory("Crop Land", QgsFillSymbol.createSimple({"color": "46,204,113,208", "outline_color": "#555555", "outline_width": "0.2"}), "Crop Land"),
     QgsRendererCategory("Non-crop Land", QgsFillSymbol.createSimple({"color": "245,194,66,208", "outline_color": "#555555", "outline_width": "0.2"}), "Non-crop Land"),
     QgsRendererCategory("No Survey Data", QgsFillSymbol.createSimple({"color": "224,224,224,208", "outline_color": "#555555", "outline_width": "0.2"}), "No Survey Data")]))

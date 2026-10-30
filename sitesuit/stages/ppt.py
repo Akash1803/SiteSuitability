@@ -235,6 +235,18 @@ def _dc_land(s, summ):
     return {"own": own, "lclass": lcl, "rem": rems, "total": split(s, A), "gov_total": split(g, G)}
 
 
+CROP_PAL = ["#2e7d32", "#c62828", "#6a1b9a", "#00838f", "#ef6c00", "#ad1457", "#1565c0", "#558b2f", "#4e342e", "#00695c"]   # same order as in qgis_render: crop categories sorted by name
+
+
+def _crop_cats(s):
+    """crop categories on the crop map (what the cultivated parcels grow), area inside the site, map colour"""
+    st = s.crop_status.astype(str) if "crop_status" in s else pd.Series(dtype=str)
+    cul = s[st.str.startswith("Cultivated (")]
+    cat = cul.crop_status.astype(str).str[12:-1]
+    names = sorted(set(cat))
+    return [{"name": n, "acre": float(cul[cat == n].site_acre.sum()), "color": CROP_PAL[k % len(CROP_PAL)]} for k, n in enumerate(names)]
+
+
 def slide_data(site, summ):
     s = pd.read_excel(site.master, sheet_name="Subdivision_Master"); s = s[s.in_site.astype(str).str.lower() == "true"]
     A = float(s.site_acre.sum())
@@ -289,7 +301,7 @@ def slide_data(site, summ):
             crops = [{"crop": k, "acre": float(r.acre), "seasons": r.seasons} for k, r in eff.iterrows()]
     except ValueError:
         pass
-    return {"total": A, "dc_glv": _dc_glv(s, pa, summ), "dc_land": _dc_land(s, summ), "own": {"Government Land": row(gov), "Patta Land": row(pat), **({"No A-register record": row(unk)} if unk > 0 else {})},
+    return {"total": A, "dc_glv": _dc_glv(s, pa, summ), "dc_land": _dc_land(s, summ), "crop_cats": _crop_cats(s) if summ.get("crop") else [], "own": {"Government Land": row(gov), "Patta Land": row(pat), **({"No A-register record": row(unk)} if unk > 0 else {})},
             "unknown_total": unk,
             "lclass": {names.get(k, k): row(v) for k, v in s.groupby("land_type_english").site_acre.sum().sort_values(ascending=False).items()},
             "rem": {k: {"total": round(float(v), 2), "pct": round(float(v) / gov * 100, 2) if gov else 0} for k, v in rem.items()},
@@ -302,7 +314,7 @@ def slide_data(site, summ):
             "abstract": abstract, "own_classes": oc, "crops": crops if summ.get("crop") else []}
 
 
-def compose_streetview(raw, out, AC, pins, info):
+def compose_streetview(raw, out, AC, pins, info, bnd=None):
     """street-view map (pins on the road render) + one full-slide picture per pin that has a photo. Returns pin hotspots (px)."""
     e = info["road"]
     base_img = raw / "street_view_raw.png"     # satellite + site boundary only (no road highlights outside the site)
@@ -318,6 +330,9 @@ def compose_streetview(raw, out, AC, pins, info):
         d.ellipse([x - 24, cy - 24, x + 24, cy + 24], fill=(255, 255, 255)); d.text((x - d.textlength(n, font=fn) / 2, cy - 20), n, fill=(16, 58, 78), font=fn)
         hot.append({"n": p["n"], "x": x - 40, "y": y - 124, "w": 80, "h": 130})
     qx, qy = pxe(*info["site_pole"]); lt = f"Site Boundary ({AC} Acres)"
+    if bnd is not None:      # label just above the site's top edge, so it never sits on the boundary line
+        xs, ys = zip(*[pxe(*to3857(x, y)) for part in getattr(bnd, "geoms", [bnd]) for x, y in part.exterior.coords])
+        qx, qy = (min(xs) + max(xs)) / 2, min(ys) - 40
     half = d.textlength(lt, font=F(36)) / 2 + 20
     hits = lambda y: sum(1 for h in hot if h["x"] - half < qx < h["x"] + h["w"] + half and h["y"] - 30 < y < h["y"] + h["h"] + 30)
     qy = min((qy + dy for dy in (0, -90, -180, 90, 180, -270)), key=lambda y: (hits(y), abs(y - qy)))   # keep the label off every pin
@@ -638,7 +653,8 @@ def run(site, ctx):
             compose_photos(raw, out, AC, summ["sitephotos"]["photos"])
         if has_sv:
             pins = json.loads((site.work / "streetview.json").read_text(encoding="utf-8"))
-            hot = compose_streetview(raw, out, AC, pins, json.loads((raw / "_render_info.json").read_text()))
+            import geopandas as gpd
+            hot = compose_streetview(raw, out, AC, pins, json.loads((raw / "_render_info.json").read_text()), gpd.read_file(site.boundary).geometry.union_all())
     (out / "data.json").write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     ctx.log("building summary slides (headless Chrome) ...")
     p = subprocess.run([sys.executable, "-m", "sitesuit.slides_html", str(out)], cwd=str(Path(__file__).resolve().parents[2]), capture_output=True,

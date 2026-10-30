@@ -19,6 +19,7 @@ def main(argv=None):
     r = sub.add_parser("run"); r.add_argument("site"); r.add_argument("--boundary"); r.add_argument("--stages"); r.add_argument("--force", action="store_true")
     r.add_argument("--dir"); r.add_argument("--show-browser", action="store_true")
     r.add_argument("--skip", default="", help="stages to leave out of the outputs, e.g. crop,streetview (their PPT slides are dropped)")
+    r.add_argument("--pins", type=int, help="number of street-view pins (default 4)")
     s = sub.add_parser("status"); s.add_argument("site")
     c = sub.add_parser("load-crop"); c.add_argument("workbook")
     k = sub.add_parser("seed-cache"); k.add_argument("project_dir")
@@ -28,7 +29,7 @@ def main(argv=None):
         db.init_schema(); loaders.load_revenue_villages(); return
     if a.cmd == "run":
         site = pipeline.open_site(a.site, a.dir)
-        opts = {"boundary_file": a.boundary, "show_browser": a.show_browser}
+        opts = {"boundary_file": a.boundary, "show_browser": a.show_browser, **({"street_pins": a.pins} if a.pins else {})}
         stages = a.stages.split(",") if a.stages else None
         if (stages is None or "parcels" in stages) and not a.boundary and (site.site_id is None or a.force):
             sys.exit("--boundary is needed for the parcels stage")

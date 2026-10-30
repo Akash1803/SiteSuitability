@@ -295,7 +295,17 @@ cr = d["crop"]; ns, nc, cl = cr["nosurvey"], cr["noncrop"], cr["crop"]
 html = BASE + css3 + '<div class="title">CROP DATA CLASSIFICATION</div><div class="body"><div class="map"><img src="map_crop.png"></div><div class="panel"><h3>CROP DATA – AREA (ACRES)</h3><div class="hdr"><span>Land Type</span><span>Area (acres)</span></div>'
 html += legend_rows([("#bdbdbd", "No Survey Data", ns, ns / A * 100), ("#f5c242", "Non-crop Land", nc, nc / A * 100), ("#2ecc71", "Crop Land", cl, cl / A * 100)])
 crops = d.get("crops") or []
-if crops:
+cats = sorted(d.get("crop_cats") or [], key=lambda c: -c["acre"])
+if cats:     # crop land split by what is grown - the same colours as the map
+    html += ('<div style="padding:22px 40px 0 40px"><div style="font-size:32px;font-weight:700;color:#0f3b5a;margin-bottom:8px">Crop categories (crop land on the map)</div>'
+             '<table style="width:100%;border-collapse:collapse;font-size:30px"><tr><th style="background:#0f3b5a;color:#fff;padding:12px;text-align:left">Crop</th>'
+             '<th style="background:#0f3b5a;color:#fff;padding:12px">Area (ac)</th><th style="background:#0f3b5a;color:#fff;padding:12px">% of site</th></tr>')
+    for c_ in cats[:8]:
+        html += (f'<tr><td style="padding:10px 12px;border-bottom:2px solid #e3e8ee"><span style="display:inline-block;width:28px;height:28px;border-radius:6px;'
+                 f'background:{c_["color"]};margin-right:14px;vertical-align:middle"></span>{c_["name"]}</td>'
+                 f'<td style="text-align:center;border-bottom:2px solid #e3e8ee">{f2(c_["acre"])}</td><td style="text-align:center;border-bottom:2px solid #e3e8ee">{c_["acre"] / A * 100:.2f}%</td></tr>')
+    html += '</table></div>'
+elif crops:
     html += ('<div style="padding:26px 40px 0 40px"><table style="width:100%;border-collapse:collapse;font-size:30px"><tr>'
              '<th style="background:#0f3b5a;color:#fff;padding:12px;text-align:left">Crop</th><th style="background:#0f3b5a;color:#fff;padding:12px">Crop area (ac)</th>'
              '<th style="background:#0f3b5a;color:#fff;padding:12px">% of site</th></tr>')

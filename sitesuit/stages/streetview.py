@@ -10,6 +10,7 @@ import math
 import geopandas as gpd
 import numpy as np
 import requests
+from shapely.geometry import Point
 
 from .. import db
 from ..config import SETTINGS
@@ -28,9 +29,13 @@ def pick_points(geom, roads, U, n=MAX_PINS):
     if r.empty:
         return []
     cand = []
+    verts = [Point(c) for part in getattr(b, "geoms", [b]) for c in part.exterior.coords]
     for row in r.itertuples():
         g = row.geometry
-        for d in np.arange(0, g.length, STEP_M):
+        # only the stretch of road alongside the site: between the first and last boundary vertex near this road (no pins past the ends)
+        near = [g.project(v) for v in verts if v.distance(g) <= NEAR_M]
+        lo, hi = (min(near) + 30, max(near) - 30) if len(near) >= 2 else (0, g.length)
+        for d in np.arange(lo, hi, STEP_M):
             p = g.interpolate(d)
             dist = p.distance(b)
             if dist <= NEAR_M:
@@ -46,6 +51,7 @@ def pick_points(geom, roads, U, n=MAX_PINS):
             break
         chosen.append(nxt)
     c = b.centroid
+    chosen.sort(key=lambda x: (x[2].x, -x[2].y))      # number the pins west to east
     pts = gpd.GeoSeries([x[2] for x in chosen], crs=U).to_crs(4326)
     out = []
     for i, (x, p4) in enumerate(zip(chosen, pts), 1):
@@ -59,7 +65,7 @@ def run(site, ctx):
     U = summ.get("utm", 32644)
     geom = gpd.read_file(site.boundary).geometry.iloc[0]
     roads = gpd.read_file(site.work / "conn.gpkg", layer="roads")
-    pts = pick_points(geom, roads, U)
+    pts = pick_points(geom, roads, U, n=int(ctx.options.get("street_pins") or MAX_PINS))
     if not pts:
         raise RuntimeError("no mapped road within 150 m of the boundary - no street-view points")
     key = SETTINGS.google_maps_key

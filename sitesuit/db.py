@@ -38,8 +38,10 @@ def ensure_server(log=print):
     log("starting the local PostgreSQL ...")
     subprocess.Popen([str(ctl), "-D", str(SETTINGS.pg_data), "-l", str(SETTINGS.pg_data / "server.log"), "start"],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    for _ in range(20):
+    for i in range(180):        # after an unclean Windows shutdown PostgreSQL first re-syncs its files (can take a minute or more)
         time.sleep(1)
+        if i and i % 15 == 0:
+            log(f"  still starting ({i} s) - recovering after the last shutdown, please wait ...")
         try:
             psycopg.connect(SETTINGS.database_url, connect_timeout=3).close(); return True
         except Exception:

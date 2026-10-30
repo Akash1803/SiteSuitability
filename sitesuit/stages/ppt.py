@@ -247,6 +247,25 @@ def _crop_cats(s):
     return [{"name": n, "acre": float(cul[cat == n].site_acre.sum()), "color": CROP_PAL[k % len(CROP_PAL)]} for k, n in enumerate(names)]
 
 
+def _glv_site(lc, gu):
+    """whole-site GLV summary in the template's shape (one column group 'total'), from the land cost + GLV unit figures"""
+    if not lc or "C1" not in lc:
+        return None
+    split = {}
+    for k in ("C1", "C2"):
+        c = lc[k]
+        split[k] = {"total": {"gov": {"acre": c["gov_acre"], "act": c["act_gov"], "neg": c["neg_gov"]},
+                              "patta": {"acre": c["pat_acre"], "act": c["act_pat"], "neg": c["neg_pat"]},
+                              "total": {"acre": c["total_acre"], "act": c["act_total"], "neg": c["neg_total"],
+                                        "act_per_acre": c["act_per_acre"], "neg_per_acre": c["neg_per_acre"]}}}
+    units = {}
+    for name, key in (("Acres", "acres"), ("Square feet", "sqft"), ("No data", "nodata")):
+        u = gu.get(key) or {}
+        if name == "Acres" or (u.get("area") or 0) > 0:
+            units[name] = {"total": float(u.get("area") or 0), "range": {"total": u.get("range", "–")}}
+    return {"split": split, "units": units, "note": ("GLV figures: " + lc["final_source"]) if lc.get("final_source") else ""}
+
+
 def slide_data(site, summ):
     s = pd.read_excel(site.master, sheet_name="Subdivision_Master"); s = s[s.in_site.astype(str).str.lower() == "true"]
     A = float(s.site_acre.sum())
@@ -301,7 +320,8 @@ def slide_data(site, summ):
             crops = [{"crop": k, "acre": float(r.acre), "seasons": r.seasons} for k, r in eff.iterrows()]
     except ValueError:
         pass
-    return {"total": A, "dc_glv": _dc_glv(s, pa, summ), "dc_land": _dc_land(s, summ), "crop_cats": _crop_cats(s) if summ.get("crop") else [], "own": {"Government Land": row(gov), "Patta Land": row(pat), **({"No A-register record": row(unk)} if unk > 0 else {})},
+    gu = (glv_final(site) or {}).get("units") or {"acres": {"range": ac_r, "area": ac_a}, "sqft": {"range": sq_r, "area": sq_a}, "nodata": {"range": "–", "area": max(nod, 0.0)}}
+    return {"total": A, "dc_glv": _dc_glv(s, pa, summ), "glv_site": _glv_site(summ.get("landcost"), gu), "dc_land": _dc_land(s, summ), "crop_cats": _crop_cats(s) if summ.get("crop") else [], "own": {"Government Land": row(gov), "Patta Land": row(pat), **({"No A-register record": row(unk)} if unk > 0 else {})},
             "unknown_total": unk,
             "lclass": {names.get(k, k): row(v) for k, v in s.groupby("land_type_english").site_acre.sum().sort_values(ascending=False).items()},
             "rem": {k: {"total": round(float(v), 2), "pct": round(float(v) / gov * 100, 2) if gov else 0} for k, v in rem.items()},

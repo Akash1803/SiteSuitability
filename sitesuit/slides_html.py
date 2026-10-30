@@ -134,9 +134,20 @@ if d.get("dc_land"):   # the site has a DC-land list: the land summary is the No
 shot(html + END, "s06_land_summary")
 
 # ---------------- 2. GLV SUMMARY ----------------
+GLV_STYLE = {"dc": ("#f6d3ad", "#7a3a00", "#fbe4cc", "#fff8f0", "#f9dfc1", "#f0b67a"),        # header, text, sub-header, cell, total, bar
+             "nd": ("#d8ccf1", "#4a2a8e", "#e8e0f8", "#f8f5fe", "#e3d9f6", "#b9a5e6"),
+             "st": ("#c9dbf5", "#173f8a", "#e1ebf9", "#f7faff", "#d5e3f7", "#7fa6e0")}
+
+
 def dc_glv_html(x, A):
-    """GLV summary, DC land vs Non-DC land side by side (DC peach, Non-DC lavender), each condition with its cost-per-acre cards"""
-    sp, units = x["split"], x["units"]
+    """GLV summary split into DC land / Non-DC land (only when the user gave a DC-land list)"""
+    foot = f'DC land: {x["surveys_text"]} ({x["n_surveys"]} surveys)'
+    return glv_cards_html(x["split"], x["units"], [("dc", "DC LAND", "dc"), ("non_dc", "NON-DC LAND", "nd")], foot, "GLV SUMMARY – DC LAND vs NON-DC LAND")
+
+
+def glv_cards_html(sp, units, groups, foot_extra, title):
+    """THE GLV summary template (Akash, 30-Oct-2026) for every site: GLV unit card + one card per condition, each column group
+    (DC / Non-DC, or the whole site) with area, compensation as per Act / by negotiation and cost-per-acre boxes"""
     cr = lambda v: f2(v / 1e7)
     lk = lambda v: f2(v / 1e5)
     css = """<style>
@@ -156,75 +167,78 @@ table{width:100%;border-collapse:separate;border-spacing:0;font-size:34px;border
 th,td{padding:16px 12px;text-align:center;border-bottom:2px solid #e4e9f1}
 th.lt{background:#dbe5f3;color:#173f8a;font-weight:700;font-size:36px}
 .g th.lt{background:#d7ecdd;color:#1e5e2e}
-th.dc{background:#f6d3ad;color:#7a3a00;font-size:40px;font-weight:700}
-th.nd{background:#d8ccf1;color:#4a2a8e;font-size:40px;font-weight:700}
-th.dcs{background:#fbe4cc;color:#7a3a00;font-weight:600;font-size:31px}
-th.nds{background:#e8e0f8;color:#4a2a8e;font-weight:600;font-size:31px}
 td{background:#fff;color:#1f2a3a}
 td.l{text-align:left;padding-left:28px;font-weight:600}
-td.dc{background:#fff8f0}
-td.nd{background:#f8f5fe}
 tr.tot td{font-weight:700;background:#edf2f9}
-tr.tot td.dc{background:#f9dfc1;color:#6a3200}
-tr.tot td.nd{background:#e3d9f6;color:#3f2380}
 .side{width:720px;border-radius:24px;background:#e9f0fa;padding:24px;display:flex;flex-direction:column;gap:16px}
 .g .side{background:#e2f3e7}
 .side .t{font-size:32px;font-weight:700;color:#173f8a;text-align:center;letter-spacing:.5px}
 .g .side .t{color:#1e5e2e}
 .pair{display:flex;gap:16px}
 .chip{flex:1;text-align:center;font-size:27px;font-weight:700;border-radius:12px;padding:8px 0}
-.chip.dc{background:#f6d3ad;color:#7a3a00}
-.chip.nd{background:#d8ccf1;color:#4a2a8e}
-.box{flex:1;background:#fff;border-radius:18px;padding:18px 8px;text-align:center;border-left:8px solid #f6d3ad}
-.box.nd{border-left-color:#d8ccf1}
+.box{flex:1;background:#fff;border-radius:18px;padding:18px 8px;text-align:center;border-left:8px solid #ccc}
 .box .l{font-size:26px;font-weight:600;color:#33415c}
-.box .v{font-size:74px;font-weight:700;line-height:1.15;color:#7a3a00}
-.box.nd .v{color:#4a2a8e}
+.box .v{font-size:74px;font-weight:700;line-height:1.15}
 .box .u{font-size:24px;color:#6b7280}
 .split{display:flex;flex-direction:column;justify-content:center}
 .sbar{display:flex;height:30px;border-radius:15px;overflow:hidden;margin-top:8px}
 .foot{margin-top:20px;text-align:center;font-size:27px;color:#475569;line-height:1.35}
 </style>"""
-    h = BASE + css + '<div class="ttl"><span class="ln"></span><span class="dot"></span>GLV SUMMARY – DC LAND vs NON-DC LAND<span class="dot"></span><span class="ln"></span></div>'
+    for _, _, st in groups:
+        hd, tx, sub, cell, tot, _ = GLV_STYLE[st]
+        css += (f"<style>th.{st}{{background:{hd};color:{tx};font-size:40px;font-weight:700}}th.{st}s{{background:{sub};color:{tx};font-weight:600;font-size:31px}}"
+                f"td.{st}{{background:{cell}}}tr.tot td.{st}{{background:{tot};color:{tx}}}.chip.{st}{{background:{hd};color:{tx}}}"
+                f".box.{st}{{border-left-color:{hd}}}.box.{st} .v{{color:{tx}}}</style>")
+    one = len(groups) == 1
+    h = BASE + css + f'<div class="ttl"><span class="ln"></span><span class="dot"></span>{title}<span class="dot"></span><span class="ln"></span></div>'
     # 1. GLV units (patta land)
     h += '<div class="card"><div class="main"><div class="hd"><div class="ic">&#9733;</div>GLV UNIT SUMMARY (PATTA LAND)</div><table>'
-    h += ('<tr><th class="lt" rowspan="2">GLV Unit</th><th class="dc" colspan="2">DC LAND</th><th class="nd" colspan="2">NON-DC LAND</th></tr>'
-          '<tr><th class="dcs">GLV Range</th><th class="dcs">Area (Acres)</th><th class="nds">GLV Range</th><th class="nds">Area (Acres)</th></tr>')
+    h += '<tr><th class="lt" rowspan="2">GLV Unit</th>' + "".join(f'<th class="{st}" colspan="2">{lab}</th>' for _, lab, st in groups) + '</tr><tr>'
+    h += "".join(f'<th class="{st}s">GLV Range</th><th class="{st}s">Area (Acres)</th>' for _, _, st in groups) + '</tr>'
     for name, u in units.items():
-        h += (f'<tr><td class="l">{name}</td><td class="dc">{u["range"]["dc"]}</td><td class="dc">{dash(u["dc"])}</td>'
-              f'<td class="nd">{u["range"]["non_dc"]}</td><td class="nd">{dash(u["non_dc"])}</td></tr>')
-    pdc = sum(u["dc"] for u in units.values()); pnd = sum(u["non_dc"] for u in units.values())
-    h += f'<tr class="tot"><td class="l">TOTAL PATTA</td><td class="dc">–</td><td class="dc">{f2(pdc)}</td><td class="nd">–</td><td class="nd">{f2(pnd)}</td></tr></table></div>'
-    pt = (pdc + pnd) or 1
-    h += (f'<div class="side split"><div class="t">PATTA AREA SPLIT</div><div class="pair">'
-          f'<div class="box"><div class="l">DC LAND</div><div class="v">{f2(pdc)}</div><div class="u">acres · {pdc / pt * 100:.1f}%</div></div>'
-          f'<div class="box nd"><div class="l">NON-DC LAND</div><div class="v">{f2(pnd)}</div><div class="u">acres · {pnd / pt * 100:.1f}%</div></div></div>'
-          f'<div class="sbar"><div style="width:{pdc / pt * 100:.2f}%;background:#f0b67a"></div><div style="width:{pnd / pt * 100:.2f}%;background:#b9a5e6"></div></div>'
-          f'<div style="text-align:center;font-size:26px;color:#33415c;font-weight:600">Total patta {f2(pdc + pnd)} acres</div></div></div>')
+        h += f'<tr><td class="l">{name}</td>' + "".join(f'<td class="{st}">{u["range"][k]}</td><td class="{st}">{dash(u[k])}</td>' for k, _, st in groups) + '</tr>'
+    pa = {k: sum(u[k] for u in units.values()) for k, _, _ in groups}
+    h += '<tr class="tot"><td class="l">TOTAL PATTA</td>' + "".join(f'<td class="{st}">–</td><td class="{st}">{f2(pa[k])}</td>' for k, _, st in groups) + '</tr></table></div>'
+    if one:    # whole site: patta land by GLV unit
+        k = groups[0][0]; st = groups[0][2]; pt = pa[k] or 1
+        parts = [(n, u[k]) for n, u in units.items()]
+        h += ('<div class="side split"><div class="t">PATTA AREA BY GLV UNIT</div><div class="pair">'
+              + "".join(f'<div class="box {st}"><div class="l">{n.upper()}</div><div class="v">{f2(v)}</div><div class="u">acres · {v / pt * 100:.1f}%</div></div>' for n, v in parts[:2])
+              + '</div><div class="sbar">' + "".join(f'<div style="width:{v / pt * 100:.2f}%;background:{c}"></div>' for (n, v), c in zip(parts, ("#7fa6e0", "#f0b67a", "#bdbdbd")))
+              + f'</div><div style="text-align:center;font-size:26px;color:#33415c;font-weight:600">Total patta {f2(pa[k])} acres</div></div></div>')
+    else:      # DC / Non-DC split of the patta land
+        pt = sum(pa.values()) or 1
+        h += ('<div class="side split"><div class="t">PATTA AREA SPLIT</div><div class="pair">'
+              + "".join(f'<div class="box {st}"><div class="l">{lab}</div><div class="v">{f2(pa[k])}</div><div class="u">acres · {pa[k] / pt * 100:.1f}%</div></div>' for k, lab, st in groups)
+              + '</div><div class="sbar">' + "".join(f'<div style="width:{pa[k] / pt * 100:.2f}%;background:{GLV_STYLE[st][5]}"></div>' for k, _, st in groups)
+              + f'</div><div style="text-align:center;font-size:26px;color:#33415c;font-weight:600">Total patta {f2(sum(pa.values()))} acres</div></div></div>')
     # 2 + 3. the two conditions
-    for key, title, cls in (("C1", "LAND ALLOTMENT AT 110% OF MARKET VALUE WITH 12% ADDITIONAL MARKET VALUE PER ANNUM", ""),
-                            ("C2", "LAND ALLOTMENT AT 150% OF MARKET VALUE WITH 12% ADDITIONAL MARKET VALUE FOR 2 YEARS", "g")):
+    for key, ctitle, cls in (("C1", "LAND ALLOTMENT AT 110% OF MARKET VALUE WITH 12% ADDITIONAL MARKET VALUE PER ANNUM", ""),
+                             ("C2", "LAND ALLOTMENT AT 150% OF MARKET VALUE WITH 12% ADDITIONAL MARKET VALUE FOR 2 YEARS", "g")):
         c = sp[key]
-        h += f'<div class="card {cls}"><div class="main"><div class="hd"><div class="ic">&#9878;</div>{title}</div><table>'
-        h += ('<tr><th class="lt" rowspan="2">Land Type</th><th class="dc" colspan="3">DC LAND</th><th class="nd" colspan="3">NON-DC LAND</th></tr><tr>'
-              '<th class="dcs">Area (acres)</th><th class="dcs">As per Act (₹ Cr)</th><th class="dcs">Negotiation (₹ Cr)</th>'
-              '<th class="nds">Area (acres)</th><th class="nds">As per Act (₹ Cr)</th><th class="nds">Negotiation (₹ Cr)</th></tr>')
-        for k, name in (("gov", "Government Land"), ("patta", "Patta Land")):
-            d_, n_ = c["dc"][k], c["non_dc"][k]
-            h += (f'<tr><td class="l">{name}</td><td class="dc">{f2(d_["acre"])}</td><td class="dc">{cr(d_["act"])}</td><td class="dc">{cr(d_["neg"])}</td>'
-                  f'<td class="nd">{f2(n_["acre"])}</td><td class="nd">{cr(n_["act"])}</td><td class="nd">{cr(n_["neg"])}</td></tr>')
-        d_, n_ = c["dc"]["total"], c["non_dc"]["total"]
-        h += (f'<tr class="tot"><td class="l">TOTAL</td><td class="dc">{f2(d_["acre"])}</td><td class="dc">{cr(d_["act"])}</td><td class="dc">{cr(d_["neg"])}</td>'
-              f'<td class="nd">{f2(n_["acre"])}</td><td class="nd">{cr(n_["act"])}</td><td class="nd">{cr(n_["neg"])}</td></tr></table></div>')
-        h += ('<div class="side"><div class="t">ESTIMATED COST PER ACRE (₹ LAKH)</div><div class="pair"><div class="chip dc">DC LAND</div><div class="chip nd">NON-DC LAND</div></div>'
-              f'<div class="pair"><div class="box"><div class="l">As per Act</div><div class="v">{lk(d_["act_per_acre"])}</div></div>'
-              f'<div class="box nd"><div class="l">As per Act</div><div class="v">{lk(n_["act_per_acre"])}</div></div></div>'
-              f'<div class="pair"><div class="box"><div class="l">As per Negotiation</div><div class="v">{lk(d_["neg_per_acre"])}</div></div>'
-              f'<div class="box nd"><div class="l">As per Negotiation</div><div class="v">{lk(n_["neg_per_acre"])}</div></div></div></div></div>')
-    t1, t2 = sp["C1"]["total"]["total"], sp["C2"]["total"]["total"]
-    h += (f'<div class="foot">Whole site {f2(t1["acre"])} acres (A-register): 110% – ₹{cr(t1["act"])} Cr as per Act / ₹{cr(t1["neg"])} Cr by negotiation; '
-          f'150% – ₹{cr(t2["act"])} Cr / ₹{cr(t2["neg"])} Cr<br>DC land: {x["surveys_text"]} ({x["n_surveys"]} surveys) &nbsp;|&nbsp; '
-          'Government land at 50% of the weighted-average patta compensation per acre</div>')
+        h += f'<div class="card {cls}"><div class="main"><div class="hd"><div class="ic">&#9878;</div>{ctitle}</div><table>'
+        h += '<tr><th class="lt" rowspan="2">Land Type</th>' + "".join(f'<th class="{st}" colspan="3">{lab}</th>' for _, lab, st in groups) + '</tr><tr>'
+        h += "".join(f'<th class="{st}s">Area (acres)</th><th class="{st}s">As per Act (₹ Cr)</th><th class="{st}s">Negotiation (₹ Cr)</th>' for _, _, st in groups) + '</tr>'
+        for kk, name in (("gov", "Government Land"), ("patta", "Patta Land")):
+            h += f'<tr><td class="l">{name}</td>' + "".join(
+                f'<td class="{st}">{f2(c[k][kk]["acre"])}</td><td class="{st}">{cr(c[k][kk]["act"])}</td><td class="{st}">{cr(c[k][kk]["neg"])}</td>' for k, _, st in groups) + '</tr>'
+        h += '<tr class="tot"><td class="l">TOTAL</td>' + "".join(
+            f'<td class="{st}">{f2(c[k]["total"]["acre"])}</td><td class="{st}">{cr(c[k]["total"]["act"])}</td><td class="{st}">{cr(c[k]["total"]["neg"])}</td>' for k, _, st in groups) + '</tr></table></div>'
+        h += '<div class="side"><div class="t">ESTIMATED COST PER ACRE (₹ LAKH)</div>'
+        if one:
+            k, _, st = groups[0]
+            h += (f'<div class="pair"><div class="box {st}"><div class="l">As per Act</div><div class="v">{lk(c[k]["total"]["act_per_acre"])}</div></div></div>'
+                  f'<div class="pair"><div class="box {st}"><div class="l">As per Negotiation</div><div class="v">{lk(c[k]["total"]["neg_per_acre"])}</div></div></div></div></div>')
+        else:
+            h += '<div class="pair">' + "".join(f'<div class="chip {st}">{lab}</div>' for _, lab, st in groups) + '</div>'
+            for f, lab_ in (("act_per_acre", "As per Act"), ("neg_per_acre", "As per Negotiation")):
+                h += '<div class="pair">' + "".join(f'<div class="box {st}"><div class="l">{lab_}</div><div class="v">{lk(c[k]["total"][f])}</div></div>' for k, _, st in groups) + '</div>'
+            h += '</div></div>'
+    tk = "total" if "total" in sp["C1"] else groups[0][0]
+    t1, t2 = sp["C1"][tk]["total"], sp["C2"][tk]["total"]
+    h += (f'<div class="foot">' + (f'Whole site {f2(t1["acre"])} acres: 110% – ₹{cr(t1["act"])} Cr as per Act / ₹{cr(t1["neg"])} Cr by negotiation; '
+          f'150% – ₹{cr(t2["act"])} Cr / ₹{cr(t2["neg"])} Cr<br>' if not one else f'Proposed area {f2(t1["acre"])} acres &nbsp;|&nbsp; ')
+          + (f'{foot_extra} &nbsp;|&nbsp; ' if foot_extra else '') + 'Government land at 50% of the weighted-average patta compensation per acre</div>')
     return h
 
 
@@ -281,8 +295,10 @@ html += f'<tr class="tot"><td>TOTAL</td><td>–</td><td>{f2(tot)}</td></tr></tab
 html += cond_card(c1, "LAND ALLOTMENT AT 110% OF MARKET VALUE WITH 12% ADDITIONAL MARKET VALUE PER ANNUM", "")
 html += cond_card(c2, "LAND ALLOTMENT AT 150% OF MARKET VALUE WITH 12% ADDITIONAL MARKET VALUE FOR 2 YEARS", "green")
 html += f'<div class="foot">Proposed area: {f2(d.get("glv_area") or A)} acres &nbsp;|&nbsp; All areas are in Acres &nbsp;|&nbsp; Amounts are in ₹ Crores</div>'
-if d.get("dc_glv"):   # the site has a DC-land list: the GLV summary is drawn split into DC / Non-DC land (same slide, Land Summary table style)
+if d.get("dc_glv"):   # DC / Non-DC classification only when the user gave a DC-land list
     html = dc_glv_html(d["dc_glv"], A)
+elif d.get("glv_site"):  # every other site: the same template with one column group for the whole site
+    html = glv_cards_html(d["glv_site"]["split"], d["glv_site"]["units"], [("total", "PROPOSED SITE", "st")], d["glv_site"].get("note", ""), "GLV SUMMARY")
 shot(html + END, "s07_glv_summary")
 
 # ---------------- 3. VILLAGEWISE ----------------

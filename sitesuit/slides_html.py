@@ -101,6 +101,50 @@ html += f'<div class="foot">Area = A-register extent; {d.get("split_surveys", 0)
 shot(html + END, "s06_land_summary")
 
 # ---------------- 2. GLV SUMMARY ----------------
+def dc_glv_html(x, A):
+    sp, units, PA = x["split"], x["units"], x["patta_acre"]
+    css = """<style>
+.sec{background:#0b2e6b;color:#fff;font-size:44px;font-weight:700;text-align:center;padding:18px 0;margin-top:30px}
+table{width:100%;border-collapse:collapse;font-size:39px}
+th{background:#0b2e6b;color:#fff;font-weight:700;padding:14px 8px;border:2px solid #fff}
+th.sub{background:#2f5aa6;font-size:34px}
+td{padding:PADpx 18px;border:2px solid #d6dde8;background:#fff;text-align:center}
+td.l{text-align:left;padding-left:30px}
+td.dc{background:#fff2cc}
+tr.tot td{background:#dfe9f8;color:#1a1ae6;font-weight:700}
+tr.tot td.dc{background:#ffe08a}
+tr.pa td{background:#f3f6fb;color:#0b2e6b;font-weight:700}
+tr.pa td.dc{background:#fff2cc}
+.foot{margin-top:26px;font-size:30px;color:#555;text-align:center;line-height:1.35}
+</style>""".replace("PAD", "18" if len(units) <= 2 else "14")
+    h = BASE + css + '<div class="title navy">GLV SUMMARY – DC LAND &amp; NON-DC LAND</div><div class="sec">GLV UNIT SUMMARY – PATTA LAND (ACRES)</div><table>'
+    h += ('<tr><th rowspan="2" style="width:150px">S. No.</th><th rowspan="2" style="width:420px">GLV Unit</th><th colspan="2">GLV Range</th>'
+          '<th colspan="3">Area (Acres)</th><th rowspan="2" style="width:300px">Percentage (%)</th></tr>'
+          '<tr><th class="sub">Non-DC Land</th><th class="sub">DC Land</th><th class="sub">Non-DC Land</th><th class="sub">DC Land</th><th class="sub">Total</th></tr>')
+    for i, (name, u) in enumerate(units.items(), 1):
+        h += (f'<tr><td>{i}</td><td class="l">{name}</td><td>{u["range"]["non_dc"]}</td><td class="dc">{u["range"]["dc"]}</td>'
+              f'<td>{dash(u["non_dc"])}</td><td class="dc">{dash(u["dc"])}</td><td>{f2(u["total"])}</td><td>{u["total"] / PA * 100 if PA else 0:.2f}%</td></tr>')
+    h += (f'<tr class="tot"><td colspan="4">TOTAL</td><td>{f2(sum(u["non_dc"] for u in units.values()))}</td>'
+          f'<td class="dc">{f2(sum(u["dc"] for u in units.values()))}</td><td>{f2(PA)}</td><td>100.00%</td></tr></table>')
+    for key, title in (("C1", "LAND ALLOTMENT AT 110% OF MARKET VALUE WITH 12% ADDITIONAL MARKET VALUE PER ANNUM"),
+                       ("C2", "LAND ALLOTMENT AT 150% OF MARKET VALUE WITH 12% ADDITIONAL MARKET VALUE FOR 2 YEARS")):
+        c = sp[key]
+        h += (f'<div class="sec">{title}</div><table><tr><th rowspan="2" style="width:165px">S. No.</th><th rowspan="2" style="width:400px">Land Type</th>'
+              '<th colspan="3">Area (Acres)</th><th colspan="3">Compensation as per Act (₹ Crores)</th><th colspan="3">Compensation as per Negotiation (₹ Crores)</th></tr><tr>'
+              + '<th class="sub">Non-DC Land</th><th class="sub">DC Land</th><th class="sub">Total</th>' * 3 + '</tr>')
+        sc = lambda f, v: v if f == "acre" else v / 1e7
+        for i, (k, name) in enumerate((("gov", "Government Land"), ("patta", "Patta Land")), 1):
+            h += f'<tr><td>{i}</td><td class="l">{name}</td>' + "".join(
+                f'<td>{dash(sc(f, c["non_dc"][k][f]))}</td><td class="dc">{dash(sc(f, c["dc"][k][f]))}</td><td>{f2(sc(f, c["total"][k][f]))}</td>' for f in ("acre", "act", "neg")) + '</tr>'
+        h += '<tr class="tot"><td colspan="2">TOTAL</td>' + "".join(
+            f'<td>{f2(sc(f, c["non_dc"]["total"][f]))}</td><td class="dc">{f2(sc(f, c["dc"]["total"][f]))}</td><td>{f2(sc(f, c["total"]["total"][f]))}</td>' for f in ("acre", "act", "neg")) + '</tr>'
+        h += '<tr class="pa"><td colspan="5">Estimated cost per acre (₹ Lakh)</td>' + "".join(
+            f'<td>{f2(c["non_dc"]["total"][f] / 1e5)}</td><td class="dc">{f2(c["dc"]["total"][f] / 1e5)}</td><td>{f2(c["total"]["total"][f] / 1e5)}</td>' for f in ("act_per_acre", "neg_per_acre")) + '</tr></table>'
+    h += (f'<div class="foot">DC land: {x["surveys_text"]} ({x["n_surveys"]} surveys) &nbsp;|&nbsp; Proposed area: {f2(A)} acres (A-register) &nbsp;|&nbsp; '
+          'Government land at 50% of the weighted-average patta compensation per acre</div>')
+    return h
+
+
 g = d["glv_unit"]; c1, c2 = d["c1"], d["c2"]
 tot = g["total"]
 css2 = """<style>
@@ -154,6 +198,8 @@ html += f'<tr class="tot"><td>TOTAL</td><td>–</td><td>{f2(tot)}</td></tr></tab
 html += cond_card(c1, "LAND ALLOTMENT AT 110% OF MARKET VALUE WITH 12% ADDITIONAL MARKET VALUE PER ANNUM", "")
 html += cond_card(c2, "LAND ALLOTMENT AT 150% OF MARKET VALUE WITH 12% ADDITIONAL MARKET VALUE FOR 2 YEARS", "green")
 html += f'<div class="foot">Proposed area: {f2(A)} acres &nbsp;|&nbsp; All areas are in Acres &nbsp;|&nbsp; Amounts are in ₹ Crores</div>'
+if d.get("dc_glv"):   # the site has a DC-land list: the GLV summary is drawn split into DC / Non-DC land (same slide, Land Summary table style)
+    html = dc_glv_html(d["dc_glv"], A)
 shot(html + END, "s07_glv_summary")
 
 # ---------------- 3. VILLAGEWISE ----------------

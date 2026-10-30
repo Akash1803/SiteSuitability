@@ -127,7 +127,7 @@ def run(site, stages=None, ctx=None, force=False, pause_at_review=False):
         status_now = db.stage_status(site.site_id) if site.site_id else {}
         if not force and status_now.get(nm, ("",))[0] == "done":
             if hasattr(st, "stale") and st.stale(site, ctx):
-                ctx.log(f"[{nm}] out of date (ticks or map style changed) - building it again")
+                ctx.log(f"[{nm}] out of date (its inputs or ticks changed) - building it again")
             else:
                 ctx.log(f"[{nm}] already done - skipped"); continue
         missing = [d for d in REQUIRES.get(nm, ()) if status_now.get(d, ("",))[0] != "done"]

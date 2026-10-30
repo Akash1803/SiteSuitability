@@ -9,7 +9,7 @@ import pandas as pd
 
 from .. import db
 from ..config import SETTINGS
-from ..util import GOVT, HA_TO_ACRE
+from ..util import GOVT, HA_TO_ACRE, dc_keys
 
 NAME, TITLE = "landcost", "Tentative land cost"
 
@@ -18,7 +18,8 @@ def _svs(s):
     return ", ".join(sorted(set(s), key=lambda x: float(re.sub(r"\D", "", x) or 0)))
 
 
-def compute(sm):
+def _rates(sm):
+    """per-record rate per acre for the template (sq-ft x 43,560); patta records without a usable rate take the village dry rate"""
     sm = sm.copy()
     sm["own"] = np.where(sm.government_priority == GOVT, "Govt", "Patta")
     sm["rate"] = pd.to_numeric(sm.glv_rate, errors="coerce") * np.where(sm.glv_unit.astype(str) == "Square Feet", 43560.0, 1.0)
@@ -31,6 +32,42 @@ def compute(sm):
         r = vill_dry.get(sm.at[i, "village"], any_rate)
         sm.at[i, "rate"] = r; sm.at[i, "basis"] = "Assumed village dry rate (register 0 / no rate)"
         assumed.append((sm.at[i, "unique_id"], sm.at[i, "site_acre"], r))
+    return sm, assumed
+
+
+def _cost(rate, pct, yrs):
+    """compensation per acre: (as per Act, by private negotiation)"""
+    G = rate * pct / 100
+    return G * 1.25 * 2 + G * 12 * yrs / 100, G * 2.75 * 1.25
+
+
+def dc_split(sm, dc):
+    """the land cost split into Non-DC / DC land (dc = boolean Series on sm's index). Same formulas as compute(); govt land in both
+    groups at 50% of the whole site's weighted patta compensation per acre, so the two groups add up to the site totals."""
+    sm, _ = _rates(sm)
+    sm["dc"] = dc.reindex(sm.index).fillna(False).astype(bool)
+    pat, gov = sm[sm.own == "Patta"], sm[sm.own == "Govt"]
+    PA = float(pat.site_acre.sum())
+    out = {}
+    for cond, pct, yrs in (("C1", 110, 1), ("C2", 150, 2)):
+        ka, kn = _cost(pat.rate, pct, yrs)
+        act, neg = ka * pat.site_acre, kn * pat.site_acre
+        wa_a, wa_n = (act.sum() / PA, neg.sum() / PA) if PA else (0, 0)
+        res = {}
+        for grp, m in (("non_dc", ~sm.dc), ("dc", sm.dc), ("total", pd.Series(True, index=sm.index))):
+            mp, mg = m.reindex(pat.index), m.reindex(gov.index)
+            pa, ga = float(pat[mp].site_acre.sum()), float(gov[mg].site_acre.sum())
+            r = {"gov": {"acre": ga, "act": 0.5 * wa_a * ga, "neg": 0.5 * wa_n * ga}, "patta": {"acre": pa, "act": float(act[mp].sum()), "neg": float(neg[mp].sum())}}
+            t = {k: r["gov"][k] + r["patta"][k] for k in ("acre", "act", "neg")}
+            t["act_per_acre"], t["neg_per_acre"] = (t["act"] / t["acre"], t["neg"] / t["acre"]) if t["acre"] else (0, 0)
+            r["total"] = t
+            res[grp] = r
+        out[cond] = res
+    return out
+
+
+def compute(sm):
+    sm, assumed = _rates(sm)
     pat = sm[sm.own == "Patta"]; gov = sm[sm.own == "Govt"]
     groups = pat.groupby(["village", "rate", "glv_unit", "basis"], dropna=False).agg(acre=("site_acre", "sum"), n=("unique_id", "size"), surveys=("survey_no", _svs)).reset_index()
     groups = groups.sort_values(["village", "rate"]).reset_index(drop=True)
@@ -122,6 +159,12 @@ def write_workbook(site, template, groups, gov_rows, res, assumed):
     wb.save(site.landcost)
 
 
+def stale(site, ctx):
+    """the DC-land list (01_Source/DC_Land_Surveys.xlsx) was added or changed after the cost was worked out"""
+    summ = db.get_summary(site.site_id)
+    return sorted(dc_keys(site)) != (summ.get("dc_list", summ.get("dc_surveys")) or [])
+
+
 def run(site, ctx):
     sm = pd.read_excel(site.master, sheet_name="Subdivision_Master", dtype={"survey_no": str, "subdiv_no": str})
     sm = sm[sm.in_site.astype(str).str.lower() == "true"].copy()
@@ -129,7 +172,15 @@ def run(site, ctx):
     write_workbook(site, SETTINGS.landcost_template, groups, gov_rows, res, assumed)
     db.register_document(site.site_id, "landcost", site.landcost)
     keep = {k: {kk: float(vv) for kk, vv in v.items()} for k, v in res.items()}
-    db.save_summary(site.site_id, {"landcost": keep, "landcost_assumed": len(assumed)})
+    dcs = dc_keys(site)
+    split = dc_split(sm, sm.survey_uid.astype(str).isin(dcs)) if dcs else None
+    if split and split["C1"]["dc"]["total"]["acre"] <= 0:
+        ctx.log(f"DC land list has {len(dcs)} surveys but none of them is in the site - the GLV summary stays without the DC split"); split = None
+    db.save_summary(site.site_id, {"landcost": keep, "landcost_assumed": len(assumed), "landcost_dc": split,
+                                   "dc_surveys": sorted(dcs) if split else [], "dc_list": sorted(dcs)})
     c1, c2 = res["C1"], res["C2"]
+    if split:
+        d1 = split["C1"]["dc"]["total"]
+        ctx.log(f"DC land: {d1['acre']:.2f} ac, C1 {d1['act'] / 1e7:.2f} cr as per Act ({d1['act_per_acre'] / 1e5:.2f} lakh/ac) - the GLV summary slide is split into DC / Non-DC land")
     return (f"C1: {c1['act_per_acre'] / 1e5:.2f} lakh/ac as per Act, {c1['neg_per_acre'] / 1e5:.2f} by negotiation; "
             f"C2: {c2['act_per_acre'] / 1e5:.2f} / {c2['neg_per_acre'] / 1e5:.2f} lakh/ac" + (f"; {len(assumed)} patta records on an assumed rate" if assumed else ""))

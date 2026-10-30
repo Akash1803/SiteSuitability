@@ -72,3 +72,17 @@ def glv_pick(listed, record_m2, govt, layout_max_m2=500):
         r = ac[0]
         return ("Survey rate - lowest acre rate listed in the survey applied (subdivision not listed)", r[0], "Acre", r[2], r[3])
     return None
+
+
+DC_FILE = "DC_Land_Surveys.xlsx"   # optional, in the project's 01_Source: the surveys marked DC land (columns village_code, survey_no)
+
+
+def dc_keys(site):
+    """{'<vcode>_<survey>'} of the DC-land surveys listed in 01_Source/DC_Land_Surveys.xlsx (empty when there is no list)"""
+    import pandas as pd
+    f = site.root / "01_Source" / DC_FILE
+    if not f.exists():
+        return set()
+    d = pd.read_excel(f, dtype=str).fillna("")
+    d.columns = [c.strip().lower() for c in d.columns]
+    return {f"{v.strip()}_{s.strip()}" for v, s in zip(d["village_code"], d["survey_no"]) if v.strip() and s.strip()}

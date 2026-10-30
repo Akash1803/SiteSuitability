@@ -157,6 +157,60 @@ def compose(site, raw, out, AC, summ, cn):
     o.save(out / "Location_Map.png")
 
 
+def inr(v):
+    """Indian digit grouping: 220000 -> '₹2,20,000'"""
+    n = f"{int(round(float(v)))}"
+    if len(n) <= 3:
+        return "₹" + n
+    head, groups = n[:-3], []
+    while len(head) > 2:
+        groups.insert(0, head[-2:]); head = head[:-2]
+    return "₹" + ",".join(([head] if head else []) + groups + [n[-3:]])
+
+
+def _ranges(nums):
+    """[499, 501, 502, 503, 506] -> '499, 501–503, 506'"""
+    out, run = [], []
+    for n in sorted(nums):
+        if run and n == run[-1] + 1:
+            run.append(n); continue
+        if run:
+            out.append(f"{run[0]}–{run[-1]}" if len(run) > 2 else ", ".join(map(str, run)))
+        run = [n]
+    if run:
+        out.append(f"{run[0]}–{run[-1]}" if len(run) > 2 else ", ".join(map(str, run)))
+    return ", ".join(out)
+
+
+def _dc_glv(s, pa, summ):
+    """data for the GLV summary split into DC / Non-DC land (only when the site has a DC-land list, see util.dc_keys)"""
+    split, dcs = summ.get("landcost_dc"), set(summ.get("dc_surveys") or [])
+    if not split or not dcs:
+        return None
+    isdc = s.survey_uid.astype(str).isin(dcs)
+    groups = (("non_dc", ~isdc), ("dc", isdc), ("total", isdc | ~isdc))
+    rs = inr
+    units = {}
+    acre_m = (pa.glv_unit == "Acre") & (pa.glv_rate > 0); sq_m = pa.glv_unit == "Square Feet"
+    for name, m in (("Acres", acre_m), ("Square feet", sq_m), ("No data", ~acre_m & ~sq_m)):
+        x = pa[m]
+        u = {g: float(x[mm.reindex(x.index)].site_acre.sum()) for g, mm in groups}
+        if name == "No data" and u["total"] <= 0:
+            continue
+        u["range"] = {}
+        for g, mm in groups[:2]:
+            y = x[mm.reindex(x.index)].glv_rate
+            u["range"][g] = "–" if name == "No data" or not len(y) else (rs(y.min()) if y.min() == y.max() else f"{rs(y.min())} – {rs(y.max())}")
+        units[name] = u
+    by_v = {}
+    for k in sorted(dcs):
+        hit = s[s.survey_uid.astype(str) == k]
+        if len(hit):
+            by_v.setdefault(hit.village.iloc[0], []).append(str(hit.survey_no.iloc[0]))
+    txt = "; ".join(f"{v} survey nos. " + (_ranges([int(x) for x in sv]) if all(x.isdigit() for x in sv) else ", ".join(sv)) for v, sv in by_v.items())
+    return {"split": split, "units": units, "patta_acre": float(pa.site_acre.sum()), "surveys_text": txt, "n_surveys": sum(len(v) for v in by_v.values())}
+
+
 def slide_data(site, summ):
     s = pd.read_excel(site.master, sheet_name="Subdivision_Master"); s = s[s.in_site.astype(str).str.lower() == "true"]
     A = float(s.site_acre.sum())
@@ -211,7 +265,7 @@ def slide_data(site, summ):
             crops = [{"crop": k, "acre": float(r.acre), "seasons": r.seasons} for k, r in eff.iterrows()]
     except ValueError:
         pass
-    return {"total": A, "own": {"Government Land": row(gov), "Patta Land": row(pat), **({"No A-register record": row(unk)} if unk > 0 else {})},
+    return {"total": A, "dc_glv": _dc_glv(s, pa, summ), "own": {"Government Land": row(gov), "Patta Land": row(pat), **({"No A-register record": row(unk)} if unk > 0 else {})},
             "unknown_total": unk,
             "lclass": {names.get(k, k): row(v) for k, v in s.groupby("land_type_english").site_acre.sum().sort_values(ascending=False).items()},
             "rem": {k: {"total": round(float(v), 2), "pct": round(float(v) / gov * 100, 2) if gov else 0} for k, v in rem.items()},

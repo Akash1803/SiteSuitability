@@ -275,7 +275,7 @@ def slide_data(site, summ):
             "glv_area": (glv_final(site) or {}).get("C1", {}).get("total", {}).get("acre") or A, "glv_source": lc.get("final_source"),
             "c1": cond("C1"), "c2": cond("C2"), "villages": {k: {"acre": float(v), "pct": float(v / A * 100)} for k, v in vil.items()},
             "crop": {"crop": crop["crop_acre"], "nosurvey": crop["no_survey_acre"], "noncrop": crop["noncrop_acre"]},
-            "village_colors": summ.get("village_colors", {}), "split_surveys": summ.get("split_surveys", 0),
+            "village_colors": summ.get("village_colors", {}), "split_surveys": int(s[s.split.astype(str).str.lower() == "true"].survey_uid.nunique()),   # cut surveys still in the site after the edge review
             "abstract": abstract, "own_classes": oc, "crops": crops if summ.get("crop") else []}
 
 

@@ -97,7 +97,8 @@ if len(PT_) > 1:
     html += _pie([(PC[k % len(PC)], t, ab["total"]["patta"].get(t, 0)) for k, t in enumerate(PT_)], f"Patta land type (total {f2(d['patta_total'])} acres)") + '</div>'
 else:   # one patta type only: show the land classification of the whole site instead
     html += _pie([(PC[k % len(PC)], n.split(" (")[0], v["total"]) for k, (n, v) in enumerate(d["lclass"].items())], f"Land classification (total {f2(A)} acres)") + '</div>'
-html += f'<div class="foot">Area = A-register extent; {d.get("split_surveys", 0)} split edge surveys are counted at the area inside the boundary. Government land classes are on the Government Land slide.</div>'
+_sp = d.get("split_surveys", 0)
+html += f'<div class="foot">Area = A-register extent' + (f'; {_sp} split edge survey{"s are" if _sp != 1 else " is"} counted at the area inside the boundary' if _sp else '') + '.</div>'
 shot(html + END, "s06_land_summary")
 
 # ---------------- 2. GLV SUMMARY ----------------

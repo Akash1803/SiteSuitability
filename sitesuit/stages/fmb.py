@@ -24,7 +24,7 @@ def run(site, ctx):
             raise RuntimeError(f"FMB downloader not found: {SETTINGS.fmb_downloader} (set FMB_DOWNLOADER in .env)")
         inp = site.fmb_dir / "FMB_Download_Input.xlsx"
         pd.DataFrame([{"district_id": v.split("_")[0], "taluk_id": v.split("_")[1], "village_id": v.split("_")[2], "survey_no": s} for v, s in todo]).to_excel(inp, index=False)
-        cmd = [sys.executable, str(SETTINGS.fmb_downloader), "--mode", "excel", "--input", str(inp), "--output", str(site.fmb_dir),
+        cmd = [sys.executable, "-u", str(SETTINGS.fmb_downloader), "--mode", "excel", "--input", str(inp), "--output", str(site.fmb_dir),
                "--download-empty", "True", "--auto-explore", "False", "--delay", "1"]
         if SETTINGS.fmb_cookie:
             cmd += ["--cookie", SETTINGS.fmb_cookie]

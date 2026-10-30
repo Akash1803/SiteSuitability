@@ -21,6 +21,10 @@ class NeedsReview(Exception):
     """raised when a village could not be matched; the map Excel must be filled in"""
 
 
+class Waiting(Exception):
+    """TNReginet refuses this computer for now: the pipeline carries on without GLV and the stage is run again later"""
+
+
 def village_map(site, ctx, vills):
     """vills: [(vcode, village name)] -> {vcode: (zone, sro, village_id)}"""
     # 1. user edits in the map Excel win
@@ -103,9 +107,14 @@ def run(site, ctx):
                     if ctx.stopped():
                         raise RuntimeError("stopped by user")
                     st, rows = rg.survey(*vmap[vc], sn)
-                    while "403" in st and pause < 600:   # TNReginet refuses for a few minutes now and then: wait it out, do not burn the list
-                        pause = min(max(60, pause * 2), 600)
+                    while "403" in st:                   # TNReginet refuses for a few minutes now and then: wait it out, do not burn the list
+                        if pause >= 240:                   # refused for 7 minutes: it is blocking this computer for longer - let the other stages go on
+                            raise Waiting(f"TNReginet is refusing requests from this computer (403 Forbidden); {i - 1} of {len(pending)} surveys "
+                                          "fetched this run and kept. Run GLV again later (e.g. in the evening); the stages that do not need GLV go on.")
+                        pause = max(60, pause * 2)
                         ctx.log(f"GLV: TNReginet answers 403 Forbidden - waiting {pause} s"); rg.quit(); time.sleep(pause)
+                        if ctx.stopped():
+                            raise RuntimeError("stopped by user")
                         st, rows = rg.survey(*vmap[vc], sn)
                     if "403" not in st:
                         pause = 0

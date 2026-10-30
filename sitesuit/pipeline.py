@@ -10,7 +10,7 @@ from .site import Site, slug
 from .stages import STAGES, BY_NAME
 
 REVIEW_AFTER = ("areg",)     # the app pauses here so the user checks the A-register before GLV / costs
-NON_BLOCKING = ("crop",)     # a missing crop workbook does not stop the cost, maps and PPT
+NON_BLOCKING = ("crop", "glv")     # a missing crop workbook / TNReginet refusing us does not stop the maps and PPT (land cost waits for GLV)
 
 
 @dataclass

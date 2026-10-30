@@ -197,7 +197,7 @@ for name, k in (("Acres", "acres"), ("Square feet", "sqft"), ("No data", "nodata
 html += f'<tr class="tot"><td>TOTAL</td><td>–</td><td>{f2(tot)}</td></tr></table></div>'
 html += cond_card(c1, "LAND ALLOTMENT AT 110% OF MARKET VALUE WITH 12% ADDITIONAL MARKET VALUE PER ANNUM", "")
 html += cond_card(c2, "LAND ALLOTMENT AT 150% OF MARKET VALUE WITH 12% ADDITIONAL MARKET VALUE FOR 2 YEARS", "green")
-html += f'<div class="foot">Proposed area: {f2(A)} acres &nbsp;|&nbsp; All areas are in Acres &nbsp;|&nbsp; Amounts are in ₹ Crores</div>'
+html += f'<div class="foot">Proposed area: {f2(d.get("glv_area") or A)} acres &nbsp;|&nbsp; All areas are in Acres &nbsp;|&nbsp; Amounts are in ₹ Crores</div>'
 if d.get("dc_glv"):   # the site has a DC-land list: the GLV summary is drawn split into DC / Non-DC land (same slide, Land Summary table style)
     html = dc_glv_html(d["dc_glv"], A)
 shot(html + END, "s07_glv_summary")

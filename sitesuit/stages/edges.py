@@ -138,7 +138,18 @@ def apply(site, ctx, sv, sub):
             "govt_acre": float(ins[ins.ownership == "Govt"].site_acre.sum()), "glv_crore": float(ins.glv_value_lakh.sum() / 100), "subdivisions": int(len(ins))}
     m = db.get_summary(site.site_id).get("master", {}); m.update(data)
     db.save_summary(site.site_id, {"master": m, "edges": counts})
+    refresh_site_villages(site, ins)
     return counts, data
+
+
+def refresh_site_villages(site, ins):
+    """villages / survey count of what is left in the site (a village whose edge surveys were all excluded drops out of the
+    title, location and summary texts); the full list stays as villages_all"""
+    summ = db.get_summary(site.site_id)
+    allv = summ.get("villages_all") or summ.get("villages", [])
+    vcs = set(ins.survey_uid.astype(str).str.rsplit("_", n=1).str[0])
+    keep = [v for v in allv if v["vcode"] in vcs] or allv
+    db.save_summary(site.site_id, {"villages_all": allv, "villages": keep, "surveys": int(ins.survey_uid.nunique())})
 
 
 def run(site, ctx):

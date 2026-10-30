@@ -33,8 +33,9 @@ def run(site, ctx):
     qgis_render(site, ctx, only=["map_glv"])
     order = [b[2] for b in ACRE_BANDS] + [b[2] for b in SQFT_BANDS] + ["Govt / value 0", "No GLV data"]
     agg = g.groupby("glv_band").agg(acre=("site_acre", "sum"), n=("unique_id", "size"), lo=("glv_rate", "min"), hi=("glv_rate", "max"))
+    num = lambda v: None if pd.isna(v) else float(v)      # 'No GLV data' has no rate (NaN is not valid JSON)
     rows = [{"band": b, "acre": float(agg.loc[b, "acre"]), "n": int(agg.loc[b, "n"]), "color": COLORS[b],
-             "lo": float(agg.loc[b, "lo"]), "hi": float(agg.loc[b, "hi"])} for b in order if b in agg.index]
+             "lo": num(agg.loc[b, "lo"]), "hi": num(agg.loc[b, "hi"])} for b in order if b in agg.index]
     ac = g[g.glv_unit == "Acre"]; sq = g[g.glv_unit == "Square Feet"]
     data = {"rows": rows, "acre_range": [float(ac[ac.glv_rate > 0].glv_rate.min() or 0), float(ac.glv_rate.max() or 0)] if len(ac[ac.glv_rate > 0]) else None,
             "sqft_range": [float(sq.glv_rate.min()), float(sq.glv_rate.max())] if len(sq) else None, "total": float(g.site_acre.sum())}

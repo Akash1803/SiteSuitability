@@ -90,6 +90,12 @@ def village_map(site, ctx, vills):
 
 def run(site, ctx):
     sv = gpd.read_file(site.parcels); sv["survey_no"] = sv.survey_no.astype(str)
+    # edge surveys already set to Exclude in the edge review need no GLV (nor their village a TNReginet match)
+    from .edges import decisions
+    excl = {k for (lv, k), (d, _) in decisions(site.site_id).items() if lv == "survey" and d == "Exclude"} if site.site_id else set()
+    if excl:
+        sv = sv[~(sv.village_code + "_" + sv.survey_no).isin(excl)].copy()
+        ctx.log(f"GLV: {len(excl)} edge surveys excluded in the edge review are left out")
     vills = list(dict.fromkeys(zip(sv.village_code, sv.village)))
     vmap = village_map(site, ctx, vills)
     keys = sorted({(v, s) for v, s in zip(sv.village_code, sv.survey_no)}, key=lambda k: (k[0], survey_sort_key(k[1])))

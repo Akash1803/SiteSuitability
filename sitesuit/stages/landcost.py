@@ -9,7 +9,7 @@ import pandas as pd
 
 from .. import db
 from ..config import SETTINGS
-from ..util import GOVT, HA_TO_ACRE, dc_keys
+from ..util import GOVT, HA_TO_ACRE, dc_keys, glv_final
 
 NAME, TITLE = "landcost", "Tentative land cost"
 
@@ -162,7 +162,10 @@ def write_workbook(site, template, groups, gov_rows, res, assumed):
 def stale(site, ctx):
     """the DC-land list (01_Source/DC_Land_Surveys.xlsx) was added or changed after the cost was worked out"""
     summ = db.get_summary(site.site_id)
-    return sorted(dc_keys(site)) != (summ.get("dc_list", summ.get("dc_surveys")) or [])
+    fin = glv_final(site)
+    used = (summ.get("landcost") or {}).get("final_source")
+    return (sorted(dc_keys(site)) != (summ.get("dc_list", summ.get("dc_surveys")) or [])
+            or bool(fin) != bool(used) or (fin and fin.get("source") != used))
 
 
 def run(site, ctx):
@@ -172,6 +175,18 @@ def run(site, ctx):
     write_workbook(site, SETTINGS.landcost_template, groups, gov_rows, res, assumed)
     db.register_document(site.site_id, "landcost", site.landcost)
     keep = {k: {kk: float(vv) for kk, vv in v.items()} for k, v in res.items()}
+    fin = glv_final(site)
+    if fin:   # the final GLV calculation was supplied (feasibility platform): the slides use it; the workbook keeps this app's working
+        for k in ("C1", "C2"):
+            c = fin[k]
+            keep[k].update(pat_acre=c["patta"]["acre"], gov_acre=c["gov"]["acre"], total_acre=c["total"]["acre"],
+                           act_pat=c["patta"]["act"] * 1e7, neg_pat=c["patta"]["neg"] * 1e7, act_gov=c["gov"]["act"] * 1e7, neg_gov=c["gov"]["neg"] * 1e7,
+                           act_total=c["total"]["act"] * 1e7, neg_total=c["total"]["neg"] * 1e7,
+                           act_per_acre=c["total"]["act"] * 1e7 / c["total"]["acre"], neg_per_acre=c["total"]["neg"] * 1e7 / c["total"]["acre"])
+        keep["final_source"] = fin.get("source", "supplied final GLV figures")
+        ctx.log(f"GLV final figures taken from {fin.get('source', 'the supplied file')}: C1 {fin['C1']['total']['act']:.2f} / {fin['C1']['total']['neg']:.2f} cr, "
+                f"C2 {fin['C2']['total']['act']:.2f} / {fin['C2']['total']['neg']:.2f} cr on {fin['C1']['total']['acre']:.2f} ac")
+        res = {k: keep[k] for k in ("C1", "C2")}
     dcs = dc_keys(site)
     split = dc_split(sm, sm.survey_uid.astype(str).isin(dcs)) if dcs else None
     if split and split["C1"]["dc"]["total"]["acre"] <= 0:

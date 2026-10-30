@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 from .. import db
 from ..config import SETTINGS
 from ..pin import teardrop
+from ..util import glv_final
 
 NAME, TITLE = "ppt", "Slides + PPT"
 W, H, B = 2160, 1374, 126
@@ -233,7 +234,7 @@ def slide_data(site, summ):
         c = lc[k]; t = c["total_acre"]
         return {"gov": {"acre": c["gov_acre"], "pct": c["gov_acre"] / t * 100, "act": c["act_gov"] / 1e7, "neg": c["neg_gov"] / 1e7},
                 "patta": {"acre": c["pat_acre"], "pct": c["pat_acre"] / t * 100, "act": c["act_pat"] / 1e7, "neg": c["neg_pat"] / 1e7},
-                "total": {"acre": A, "act": c["act_total"] / 1e7, "neg": c["neg_total"] / 1e7},
+                "total": {"acre": c["total_acre"] if lc.get("final_source") else A, "act": c["act_total"] / 1e7, "neg": c["neg_total"] / 1e7},
                 "per_acre_act_lakh": c["act_per_acre"] / 1e5, "per_acre_neg_lakh": c["neg_per_acre"] / 1e5}
     crop = summ.get("crop") or {"crop_acre": 0.0, "no_survey_acre": A, "noncrop_acre": 0.0}
     vil = s.groupby("village").site_acre.sum()
@@ -270,7 +271,8 @@ def slide_data(site, summ):
             "lclass": {names.get(k, k): row(v) for k, v in s.groupby("land_type_english").site_acre.sum().sort_values(ascending=False).items()},
             "rem": {k: {"total": round(float(v), 2), "pct": round(float(v) / gov * 100, 2) if gov else 0} for k, v in rem.items()},
             "gov_total": float(gov), "patta_total": float(pat),
-            "glv_unit": {"acres": {"range": ac_r, "area": ac_a}, "sqft": {"range": sq_r, "area": sq_a}, "nodata": {"range": "–", "area": max(nod, 0.0)}, "total": float(pat)},
+            "glv_unit": (glv_final(site) or {}).get("units") or {"acres": {"range": ac_r, "area": ac_a}, "sqft": {"range": sq_r, "area": sq_a}, "nodata": {"range": "–", "area": max(nod, 0.0)}, "total": float(pat)},
+            "glv_area": (glv_final(site) or {}).get("C1", {}).get("total", {}).get("acre") or A, "glv_source": lc.get("final_source"),
             "c1": cond("C1"), "c2": cond("C2"), "villages": {k: {"acre": float(v), "pct": float(v / A * 100)} for k, v in vil.items()},
             "crop": {"crop": crop["crop_acre"], "nosurvey": crop["no_survey_acre"], "noncrop": crop["noncrop_acre"]},
             "village_colors": summ.get("village_colors", {}), "split_surveys": summ.get("split_surveys", 0),
@@ -529,7 +531,10 @@ def exec_data(summ, data, on):
     if cr:
         cards.append({"k": "Crop land", "v": f"{cr['crop_acre'] / A * 100:.1f}% <small>of site</small>", "cls": "g",
                       "s": f"Crop {cr['crop_acre']:,.2f} ac · non-crop {cr['noncrop_acre']:,.2f} · no survey {cr['no_survey_acre']:,.2f}"})
-    if m.get("glv_crore") and on("glv"):
+    if lc and summ["landcost"].get("final_source"):   # final GLV calculation supplied: show its land cost, not this app's GLV total
+        cards.append({"k": "Land cost – final GLV (C1)", "v": f"Rs {lc['act_total'] / 1e7:,.2f} <small>crore (Act)</small>",
+                      "s": f"Negotiation Rs {lc['neg_total'] / 1e7:,.2f} cr · {lc['total_acre']:,.2f} ac"})
+    elif m.get("glv_crore") and on("glv"):
         cards.append({"k": "Guideline value (indicative)", "v": f"Rs {m['glv_crore']:,.1f} <small>crore</small>", "s": "TNReginet rates as quoted (acre / sq ft)"})
     se = summ.get("sensitive") if on("sensitive") else None
     if se:

@@ -86,3 +86,15 @@ def dc_keys(site):
     d = pd.read_excel(f, dtype=str).fillna("")
     d.columns = [c.strip().lower() for c in d.columns]
     return {f"{v.strip()}_{s.strip()}" for v, s in zip(d["village_code"], d["survey_no"]) if v.strip() and s.strip()}
+
+
+GLV_FINAL_FILE = "GLV_Final_Platform.json"   # optional, in 05_GLV: the final GLV calculation from the feasibility platform
+
+
+def glv_final(site):
+    """final GLV figures supplied for the site (05_GLV/GLV_Final_Platform.json), or None. Amounts in Rs crore:
+    {"source": "...", "C1": {"gov": {"acre", "act", "neg"}, "patta": {...}, "total": {...}}, "C2": {...},
+     "units": {"acres": {"range", "area"}, "sqft": {...}, "nodata": {...}, "total": patta acres}}"""
+    import json
+    f = site.root / "05_GLV" / GLV_FINAL_FILE
+    return json.loads(f.read_text(encoding="utf-8")) if f.exists() else None

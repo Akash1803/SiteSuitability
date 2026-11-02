@@ -6,6 +6,7 @@ import warnings
 
 import geopandas as gpd
 import pandas as pd
+from pathlib import Path
 from psycopg.types.json import Jsonb
 from shapely import force_2d
 from shapely.geometry import MultiPolygon, Polygon
@@ -201,3 +202,21 @@ def import_glv_output(path, log=print, sheet=0):
                                ON CONFLICT (vcode) DO UPDATE SET zone_list_id=EXCLUDED.zone_list_id, sro_list_id=EXCLUDED.sro_list_id,
                                village_list_id=EXCLUDED.village_list_id, confirmed=true, updated_at=now()""", [(k, *v) for k, v in mp.items()])
     log(f"GLV cache: {len(rows)} rows, {len(mp)} village ids from {path}")
+
+
+def load_reginet_master(path, log=print):
+    """the team's TNReginet list of every district / SRO / village id (District Name, District ID, SRO Name, SRO ID, Village Name, Village ID) into
+    portal.reginet_option, so a new district needs no live listing. Districts already listed live are kept as they are: the live list is newer
+    (in Coimbatore 6 villages have since moved to another SRO)."""
+    m = pd.read_excel(path, dtype=str).fillna("")
+    m = m[(m["Village ID"] != "") & (m["SRO ID"] != "")]
+    with db.connect() as c:
+        c.execute("ALTER TABLE portal.reginet_option ADD COLUMN IF NOT EXISTS source text DEFAULT 'TNReginet live list'")
+        live = {r[0] for r in c.execute("SELECT DISTINCT zone_list_id FROM portal.reginet_option WHERE COALESCE(source, 'TNReginet live list') = 'TNReginet live list'")}
+        new = m[~m["District ID"].isin(live)]
+        with c.cursor() as cur:
+            cur.executemany("""INSERT INTO portal.reginet_option (zone_list_id, sro_list_id, sro_name, village_list_id, village_name, fetched_at, source)
+                               VALUES (%s,%s,%s,%s,%s, now(), %s) ON CONFLICT (zone_list_id, sro_list_id, village_list_id) DO UPDATE SET
+                               sro_name = EXCLUDED.sro_name, village_name = EXCLUDED.village_name, source = EXCLUDED.source""",
+                            [(r["District ID"], r["SRO ID"], r["SRO Name"].strip(), r["Village ID"], r["Village Name"].strip(), Path(path).name) for r in new.to_dict("records")])
+    log(f"TNReginet list: {new['District ID'].nunique()} districts, {new['SRO ID'].nunique()} SROs, {len(new):,} villages loaded; {len(live)} districts kept from the live list: {sorted(live)}")

@@ -95,6 +95,8 @@ CREATE TABLE IF NOT EXISTS portal.reginet_option (     -- dropdown listing per d
     fetched_at      timestamptz DEFAULT now(),
     PRIMARY KEY (zone_list_id, sro_list_id, village_list_id)
 );
+ALTER TABLE portal.reginet_option ADD COLUMN IF NOT EXISTS source text DEFAULT 'TNReginet live list';
+
 CREATE TABLE IF NOT EXISTS portal.glv (
     vcode           text NOT NULL,
     survey_no       text NOT NULL,

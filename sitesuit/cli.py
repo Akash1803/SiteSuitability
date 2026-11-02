@@ -4,6 +4,7 @@
   python -m sitesuit.cli status <site>
   python -m sitesuit.cli load-crop <workbook.xlsx>       add a crop-survey workbook to the statewide crop table
   python -m sitesuit.cli seed-cache <project dir>        import an earlier site's CLIP / A-register / GLV outputs into the cache
+  python -m sitesuit.cli load-reginet <xlsx>             load the TNReginet district / SRO / village id list into the database
   python -m sitesuit.cli pdf <site>                      PDF of the PPT (only after it is confirmed)"""
 import argparse
 import glob
@@ -23,6 +24,7 @@ def main(argv=None):
     s = sub.add_parser("status"); s.add_argument("site")
     c = sub.add_parser("load-crop"); c.add_argument("workbook")
     k = sub.add_parser("seed-cache"); k.add_argument("project_dir")
+    t = sub.add_parser("load-reginet"); t.add_argument("workbook")
     p = sub.add_parser("pdf"); p.add_argument("site")
     a = ap.parse_args(argv)
     if a.cmd == "init-db":
@@ -44,6 +46,8 @@ def main(argv=None):
         return
     if a.cmd == "load-crop":
         print(loaders.load_crop_workbook(a.workbook)); return
+    if a.cmd == "load-reginet":
+        loaders.load_reginet_master(a.workbook); return
     if a.cmd == "seed-cache":
         for f in glob.glob(a.project_dir + "/03_CLIP/Clip_Output*.xlsx"):
             loaders.import_clip_output(f)

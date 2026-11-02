@@ -104,7 +104,7 @@ def apply(site, ctx, sv, sub):
         u, sk = sm.at[i, "unique_id"], sm.at[i, "skey"]
         sd = dec.get(("survey", sk), ("Part", None))[0]
         d, t = dec.get(("subdiv", u), ("Part", None)) if sd == "Part" else (sd, None)
-        if d == "Exclude" or (d == "Part" and not t and (sm.at[i, "parcel_acre"] or 0) <= 0):
+        if d == "Exclude" or (d == "Part" and not t and (sm.at[i, "parcel_acre"] or 0) < 0.0005):
             sm.at[i, "in_site"] = False; sm.at[i, "site_acre"] = 0.0; sm.at[i, "area_basis"] = "Excluded in the edge review"; counts["Exclude"] += 1
         elif d == "Full":
             sm.at[i, "in_site"] = True; sm.at[i, "site_acre"] = sm.at[i, "areg_acre"]

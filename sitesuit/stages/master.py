@@ -264,6 +264,28 @@ def write_geojson(g, path):
         pass   # the old file is locked (open in QGIS): the new one stays as *_new.geojson
 
 
+def export_layers(site):
+    """the two delivered parcel layers in 02_GIS_Data: FMB level (one feature per subdivision) and cadastral (one per survey), both led by
+    kide / survey_no / subdiv_no / area_acre"""
+    from .parcels import polys
+    g = gpd.read_file(site.subdivisions)
+    g = g[pd.to_numeric(g.site_acre, errors="coerce").fillna(0) >= 0.0005].copy() if "site_acre" in g else g
+    g["geometry"] = polys(g.geometry); g = g[g.geometry.notna()].copy()
+    lead = ["kide", "survey_no", "subdiv_no", "area_acre"]
+    f = g[lead + [c for c in g.columns if c not in lead and c != "geometry"] + ["geometry"]]
+    write_geojson(f, site.fmb_layer)
+    own = lambda x: x.iloc[0] if x.nunique() == 1 else "Mixed"
+    agg = {"survey_no": "first", "village": "first", "district_id": "first", "taluk_id": "first", "village_id": "first", "area_acre": "sum", "areg_acre": "sum",
+           "ownership": own, "land_type_english": lambda x: "/".join(sorted(set(x.dropna()))), "split": "first",
+           "area_basis": lambda x: "; ".join(sorted(set(x.dropna()))), "unique_id": "size"}
+    c = g.dissolve("survey_uid", aggfunc={k: v for k, v in agg.items() if k in g.columns}).reset_index().rename(columns={"unique_id": "subdivisions"})
+    c["kide"] = c.survey_no.astype(str) + "/-"; c["subdiv_no"] = "-"
+    c["area_acre"] = pd.to_numeric(c.area_acre, errors="coerce").round(4)
+    rest = [x for x in ("subdivisions", "village", "survey_uid", "district_id", "taluk_id", "village_id", "areg_acre", "split", "ownership", "land_type_english", "area_basis") if x in c.columns]
+    write_geojson(c[lead + rest + ["geometry"]], site.cadastral)
+    return len(c), len(f)
+
+
 def write_master(site, sm, ov):
     ins = sm[sm.in_site]
     surv = ins.groupby(["village", "survey_no"]).agg(

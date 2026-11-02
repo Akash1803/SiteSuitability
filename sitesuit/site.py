@@ -29,14 +29,27 @@ class Site:
         return self.root / folder / fname
 
     # ---- fixed file names ----
+    def _working(self, name):
+        """working layers live in _work; 02_GIS_Data holds only the boundary, cadastral and FMB layers (older sites move over on first use)"""
+        new, old = self.work / name, self.root / "02_GIS_Data" / name
+        if old.exists() and not new.exists():
+            new.parent.mkdir(parents=True, exist_ok=True); old.replace(new)
+        return new
+
+    @property
+    def cadastral(self): return self.p("02_GIS_Data", f"{self.s}_Cadastral_Parcels.geojson")
+
+    @property
+    def fmb_layer(self): return self.p("02_GIS_Data", f"{self.s}_FMB_Parcels.geojson")
+
     @property
     def boundary(self): return self.p("02_GIS_Data", f"{self.s}_Outer_Boundary.geojson")
     @property
-    def parcels(self): return self.p("02_GIS_Data", f"{self.s}_Survey_Parcels.geojson")
+    def parcels(self): return self._working(f"{self.s}_Survey_Parcels.geojson")
     @property
-    def puvi_fmb(self): return self.p("02_GIS_Data", f"{self.s}_Puvi_FMB.geojson")
+    def puvi_fmb(self): return self._working(f"{self.s}_Puvi_FMB.geojson")
     @property
-    def subdivisions(self): return self.p("02_GIS_Data", f"{self.s}_Subdivision_Parcels.geojson")
+    def subdivisions(self): return self._working(f"{self.s}_Subdivision_Parcels.geojson")
     @property
     def clip_input(self): return self.p("03_CLIP", f"Clip_Input_{self.s}.xlsx")
     @property

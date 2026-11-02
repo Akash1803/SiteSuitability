@@ -158,4 +158,8 @@ def run(site, stages=None, ctx=None, force=False, pause_at_review=False):
         if pause_at_review and nm in REVIEW_AFTER and any(x in selected() for x in later):
             ctx.log(f"[{nm}] review point - check the A-register Excel, then continue")
             return "review"
+    if site.subdivisions.exists():      # the delivered layers follow the final parcels (edge review, crop, ...)
+        from .stages.master import export_layers
+        n_c, n_f = export_layers(site)
+        ctx.log(f"02_GIS_Data: cadastral {n_c} surveys, FMB level {n_f} parcels")
     return "done"

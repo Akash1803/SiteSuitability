@@ -279,6 +279,12 @@ def export_layers(site):
            "ownership": own, "land_type_english": lambda x: "/".join(sorted(set(x.dropna()))), "split": "first",
            "area_basis": lambda x: "; ".join(sorted(set(x.dropna()))), "unique_id": "size"}
     c = g.dissolve("survey_uid", aggfunc={k: v for k, v in agg.items() if k in g.columns}).reset_index().rename(columns={"unique_id": "subdivisions"})
+    # survey outline from the Puvi survey layer (no blanks), not the merged subdivision cuts; surveys kept whole in the edge review stay as merged
+    sv = gpd.read_file(site.parcels)
+    outline = dict(zip(sv.village_code.astype(str) + "_" + sv.survey_no.astype(str), sv.geometry.make_valid()))
+    whole = c.area_basis.astype(str).str.contains("kept whole") if "area_basis" in c else pd.Series(False, index=c.index)
+    c["geometry"] = [outline.get(k, g) if not w else g for k, g, w in zip(c.survey_uid.astype(str), c.geometry, whole)]
+    c["geometry"] = polys(c.geometry)
     c["kide"] = c.survey_no.astype(str) + "/-"; c["subdiv_no"] = "-"
     c["area_acre"] = pd.to_numeric(c.area_acre, errors="coerce").round(4)
     rest = [x for x in ("subdivisions", "village", "survey_uid", "district_id", "taluk_id", "village_id", "areg_acre", "split", "ownership", "land_type_english", "area_basis") if x in c.columns]

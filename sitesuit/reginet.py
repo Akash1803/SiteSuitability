@@ -176,7 +176,8 @@ class Reginet:
                 self.log(f"  SRO list of district {zone}: {_err(e)[:100]} - trying again in {30 * (attempt + 1)} s")
                 self.quit(); time.sleep(30 * (attempt + 1))
         sros = self.options("SROList")
-        for sid, sname in sros:
+        for n, (sid, sname) in enumerate(sros, 1):
+            self.log(f"  listing SRO {n} of {len(sros)}: {sname}")
             for attempt in range(2):
                 try:
                     self._survey_mode(); self._select([("districtList", zone), ("SROList", sid), ("villageList", None)])

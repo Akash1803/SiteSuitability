@@ -33,6 +33,50 @@ def _multi(g):
     return MultiPolygon(parts) if parts else None
 
 
+TN_BBOX = (76.2, 8.0, 80.4, 13.6)
+
+
+def load_detected_roads(zip_path, log=print, bbox=TN_BBOX):
+    """Microsoft Road Detections region zip (rows: ISO3 <TAB> GeoJSON feature with WidthMeters) -> ref.detected_road,
+    India rows inside the Tamil Nadu box only. Replaces what was loaded before from the same file."""
+    import io
+    import json
+    import zipfile
+    x0, y0, x1, y1 = bbox
+    src = Path(zip_path).name
+    with db.connect() as c:
+        c.execute("DELETE FROM ref.detected_road WHERE source = %s", (src,))
+    n = kept = 0; batch = []
+
+    def flush():
+        with db.connect() as c:
+            with c.cursor() as cur:
+                cur.executemany("INSERT INTO ref.detected_road (width_m, source, geom) VALUES (%s,%s, ST_GeomFromText(%s,4326))", batch)
+        batch.clear()
+    with zipfile.ZipFile(zip_path) as z:
+        for member in z.namelist():
+            with io.TextIOWrapper(z.open(member), encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    if not line.startswith("IND\t"):
+                        continue
+                    n += 1
+                    feat = json.loads(line.split("\t", 1)[1])
+                    g = feat.get("geometry") or {}
+                    cs = g.get("coordinates") or []
+                    parts = [cs] if g.get("type") == "LineString" else (cs if g.get("type") == "MultiLineString" else [])
+                    for p in parts:
+                        if len(p) < 2 or not any(x0 <= q[0] <= x1 and y0 <= q[1] <= y1 for q in p):
+                            continue
+                        batch.append(((feat.get("properties") or {}).get("WidthMeters"), src, "LINESTRING(" + ",".join(f"{q[0]} {q[1]}" for q in p) + ")"))
+                        kept += 1
+                    if len(batch) >= 20000:
+                        flush(); log(f"  {kept:,} Tamil Nadu road lines loaded ({n:,} India rows read)")
+    if batch:
+        flush()
+    log(f"detected roads: {kept:,} Tamil Nadu lines from {n:,} India rows ({src})")
+    return kept
+
+
 def load_revenue_villages(log=print, force=False):
     with db.connect() as c:
         n = c.execute("SELECT count(*) FROM ref.village").fetchone()[0]

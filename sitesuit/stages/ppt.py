@@ -78,6 +78,16 @@ def compose(site, raw, out, AC, summ, cn):
     dm = summ.get("dimensions")
     if dm:
         FC = [(255, 61, 0), (0, 229, 255), (255, 214, 0), (213, 0, 249), (118, 255, 3)]
+        def gl(g):   # GeoJSON line / multiline -> list of coordinate lists
+            return [] if not g else (g["coordinates"] if g["type"] == "MultiLineString" else [g["coordinates"]])
+        end_boxes = []
+        rl = Image.new("RGBA", o.size, (0, 0, 0, 0)); rd = ImageDraw.Draw(rl)   # road centrelines on their own layer, clipped to the map
+        for f in dm["fronts"]:
+            for ln in gl(f.get("road")) + [c for x in f.get("ends", []) for c in gl(x.get("draw"))]:
+                pts = [pxe(e, *to3857(x, y)) for x, y in ln]
+                if len(pts) > 1:
+                    rd.line(pts, fill=(255, 255, 255, 255), width=6)
+        rl.paste((0, 0, 0, 0), (0, 0, W, B)); o.paste(rl, (0, 0), rl)
         for k, f in enumerate(dm["fronts"]):
             col = FC[k % len(FC)]
             lines = f["geom"]["coordinates"] if f["geom"]["type"] == "MultiLineString" else [f["geom"]["coordinates"]]
@@ -88,6 +98,19 @@ def compose(site, raw, out, AC, summ, cn):
             mid = [pxe(e, *to3857(x, y)) for x, y in lines[0]][len(lines[0]) // 2]
             t = f"{f['label']} frontage: {f['m']:,} m"
             d.text((min(max(mid[0] + 16, 10), W - d.textlength(t, font=F(30)) - 10), min(max(mid[1] - 46, B + 10), B + H - 50)), t, fill=col, font=F(30), stroke_width=4, stroke_fill=(0, 0, 0))
+            # each end of an unnamed road: arrow along the road away from the site + where it leads
+            for x in f.get("ends", []):
+                a = pxe(e, *to3857(*x["at"])); tip = pxe(e, *to3857(*x["tip"]))
+                ang = math.atan2(tip[1] - a[1], tip[0] - a[0]); ax, ay = a[0] + 110 * math.cos(ang), a[1] + 110 * math.sin(ang)
+                ax, ay = min(max(ax, 40), W - 40), min(max(ay, B + 40), B + H - 40)
+                d.line([a, (ax, ay)], fill=(255, 255, 255), width=7)
+                for sgn in (1, -1):
+                    d.line([(ax, ay), (ax - 28 * math.cos(ang + sgn * 0.5), ay - 28 * math.sin(ang + sgn * 0.5))], fill=(255, 255, 255), width=7)
+                tw = d.textlength(x["text"], font=F(30))
+                tx = ax + 14 if math.cos(ang) >= 0 else ax - 14 - tw
+                tx, ty = min(max(tx, 10), W - tw - 10), min(max(ay - 18 + 24 * math.sin(ang), B + 10), B + H - 50)
+                d.text((tx, ty), x["text"], fill=(255, 255, 255), font=F(30), stroke_width=4, stroke_fill=(0, 0, 0))
+                end_boxes.append(((min(tx, a[0]) - 10, min(ty, a[1], ay) - 10, max(tx + tw, a[0]) + 10, max(ty + 40, a[1], ay) + 10), 3.0))
         for key, txt in (("long_line", f"{dm.get('long_span_m', dm['length_m']) / 1000:.2f} km"), ("short_line", f"{dm.get('short_span_m', dm['width_m']) / 1000:.2f} km")):
             (a1, a2) = [pxe(e, *to3857(x, y)) for x, y in dm[key]]
             d.line([a1, a2], fill=(255, 255, 255), width=4)
@@ -98,8 +121,8 @@ def compose(site, raw, out, AC, summ, cn):
             mx, my = a1[0] + (a2[0] - a1[0]) * 0.72, a1[1] + (a2[1] - a1[1]) * 0.72   # label near one end, clear of the acreage label
             d.text((mx + 14, my - 40), txt, fill=(255, 255, 255), font=F(32), stroke_width=4, stroke_fill=(0, 0, 0))
         info = [f"Area: {AC} acres", f"Overall extent: {dm['length_m'] / 1000:.2f} km x {dm['width_m'] / 1000:.2f} km", f"Perimeter: {dm['perimeter_m'] / 1000:.2f} km"]
-        info += [f"{f['label']} frontage: {f['m']:,} m" for f in dm["fronts"][:4]] or ["No frontage on a named road"]
-        panel(d, 0, 0, "Site Dimensions", info, 27, avoid=[(site_box(site, e), 1.0), (LINK_BOX, 3.0), (TOOLBAR, 2.0)])
+        info += [f"{f['label']} frontage: {f['m']:,} m" for f in dm["fronts"][:4]] or ["No road frontage"]
+        panel(d, 0, 0, "Site Dimensions", info, 27, avoid=[(site_box(site, e), 1.0), (LINK_BOX, 3.0), (TOOLBAR, 2.0)] + end_boxes)
     label(d, pxe(e, *I["site_pole"]), AC + " Acres", 54); o.save(out / "Boundary.png")
     # road connectivity
     o, d = base("road_connectivity_raw.png", "ROAD CONNECTIVITY"); e = I["road"]

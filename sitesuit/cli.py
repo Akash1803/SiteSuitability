@@ -5,7 +5,8 @@
   python -m sitesuit.cli load-crop <workbook.xlsx>       add a crop-survey workbook to the statewide crop table
   python -m sitesuit.cli seed-cache <project dir>        import an earlier site's CLIP / A-register / GLV outputs into the cache
   python -m sitesuit.cli load-reginet <xlsx>             load the TNReginet district / SRO / village id list into the database
-  python -m sitesuit.cli pdf <site>                      PDF of the PPT (only after it is confirmed)"""
+  python -m sitesuit.cli pdf <site>                      PDF of the PPT (only after it is confirmed)
+  python -m sitesuit.cli load-roads <Southern_Asia.zip>  roads detected on satellite imagery (Microsoft Road Detections), Tamil Nadu part"""
 import argparse
 import glob
 import sys
@@ -26,7 +27,10 @@ def main(argv=None):
     k = sub.add_parser("seed-cache"); k.add_argument("project_dir")
     t = sub.add_parser("load-reginet"); t.add_argument("workbook")
     p = sub.add_parser("pdf"); p.add_argument("site")
+    d = sub.add_parser("load-roads"); d.add_argument("zip")
     a = ap.parse_args(argv)
+    if a.cmd == "load-roads":
+        db.init_schema(); print(loaders.load_detected_roads(a.zip)); return
     if a.cmd == "init-db":
         db.init_schema(); loaders.load_revenue_villages(); return
     if a.cmd == "run":

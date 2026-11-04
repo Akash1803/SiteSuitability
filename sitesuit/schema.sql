@@ -21,6 +21,16 @@ CREATE TABLE IF NOT EXISTS ref.village (
 CREATE INDEX IF NOT EXISTS village_geom_gix ON ref.village USING gist (geom);
 CREATE INDEX IF NOT EXISTS village_lgd_ix ON ref.village (lgd_village);
 
+-- ---------- reference: roads detected on satellite imagery (Microsoft Road Detections, ODbL), Tamil Nadu only ----------
+-- covers village / cart roads that OpenStreetMap does not have; used for road frontage on the boundary slide
+CREATE TABLE IF NOT EXISTS ref.detected_road (
+    id           bigserial PRIMARY KEY,
+    width_m      real,
+    source       text,
+    geom         geometry(LineString, 4326)
+);
+CREATE INDEX IF NOT EXISTS detected_road_gix ON ref.detected_road USING gist (geom);
+
 -- ---------- cadastral: Puvi vector (survey polygons) and Puvi FMB (subdivision plots), loaded per village ----------
 CREATE TABLE IF NOT EXISTS cadastral.loaded_village (
     vcode        text PRIMARY KEY,

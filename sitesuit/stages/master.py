@@ -49,7 +49,7 @@ def build_records(site, log, use_glv=True):
     g["unit"] = g.Guideline_Value_British.str.extract(r"/\s*(.*)$")[0].str.strip().fillna("")
     g["num"] = pd.to_numeric(g.Guideline_Value_British.str.extract(r"^\s*([\d.]+)")[0], errors="coerce")
     g.loc[g.num == 0, "unit"] = "Acre"
-    g["uid"] = g.vcode + "_" + g["Subdivision Number"].str.strip()
+    g["uid"] = g.vcode.astype(str) + "_" + g["Subdivision Number"].astype(str).str.strip()   # astype: an empty GLV table (GLV waiting / unticked) has float columns
     gx = g.drop_duplicates("uid").set_index("uid")
     by_s = {k: list(zip(d.num, d.unit, d.Land_Classification, d.Effective_Start_Date)) for k, d in g.groupby(["vcode", "survey_no"])}
     ind = {}   # optional indicative Rs/acre per village typed into the GLV village map (villages TNReginet lists only as a blanket rate)

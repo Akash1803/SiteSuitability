@@ -55,11 +55,29 @@ def village_map(site, ctx, vills):
                         with c.cursor() as cur:
                             cur.executemany("""INSERT INTO portal.reginet_option VALUES (%s,%s,%s,%s,%s, now()) ON CONFLICT DO NOTHING""", [(z, *o) for o in opts])
                     ctx.log(f"  {len(opts)} villages under {len({o[0] for o in opts})} SROs")
+                res = []
                 for v, n in [t for t in todo if str(split_vcode(t[0])[0]) == z]:
                     key = norm_name(n)
                     scored = sorted(((difflib.SequenceMatcher(None, key, norm_name(re.sub(r"\(.*?\)", "", o[3]))).ratio(), o) for o in opts), key=lambda x: -x[0])
                     best = scored[0] if scored else (0, None)
-                    tie = len(scored) > 1 and scored[1][0] == best[0] and scored[1][1][2] != best[1][2]
+                    tied = [s for s in scored if best[1] and s[0] == best[0] and s[1][2] != best[1][2]]
+                    res.append((v, scored, best, bool(tied)))
+                # the same village name under two SROs (Thangammalpuram: Ettayapuram + Vilathikulam): take the SRO that already serves
+                # a confirmed village of the same taluk; otherwise it stays unconfirmed for review
+                with db.connect() as c:
+                    sro_of_taluk = {}
+                    for vc, sro in c.execute("SELECT vcode, sro_list_id FROM portal.reginet_village WHERE confirmed"):
+                        sro_of_taluk.setdefault(vc.rsplit("_", 1)[0], set()).add(str(sro))
+                for v, scored, best, tie in res:
+                    if not (best[1] and best[0] >= MIN_SCORE and not tie):
+                        continue
+                    sro_of_taluk.setdefault(v.rsplit("_", 1)[0], set()).add(str(best[1][0]))
+                for i, (v, scored, best, tie) in enumerate(res):
+                    if tie and best[0] >= MIN_SCORE:
+                        same = [s for s in scored if s[0] == best[0] and str(s[1][0]) in sro_of_taluk.get(v.rsplit("_", 1)[0], set())]
+                        if len({s[1][2] for s in same}) == 1:
+                            res[i] = (v, scored, same[0], False)
+                for v, scored, best, tie in res:
                     with db.connect() as c:
                         c.execute("""INSERT INTO portal.reginet_village (vcode, zone_list_id, sro_list_id, sro_name, village_list_id, reginet_name, match_score, confirmed)
                                      VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (vcode) DO UPDATE SET zone_list_id=EXCLUDED.zone_list_id, sro_list_id=EXCLUDED.sro_list_id,
@@ -80,8 +98,17 @@ def village_map(site, ctx, vills):
             m = m.merge(old[["vcode", "indicative_rate_acre"]], on="vcode", how="left")
     if "indicative_rate_acre" not in m.columns:
         m["indicative_rate_acre"] = ""
-    m.to_excel(site.glv_map, index=False)
     bad = m[~m.confirmed.fillna(False).astype(bool)]
+    # an unconfirmed guess must not sit in the id columns: the next run reads filled ids as the user's answer and confirms them
+    m["choices"] = ""
+    if len(bad):
+        with db.connect() as c:
+            for i in bad.index:
+                opts = c.execute("SELECT sro_list_id, sro_name, village_list_id, village_name FROM portal.reginet_option WHERE zone_list_id = %s AND upper(village_name) = upper(%s)",
+                                 (str(m.at[i, "zone_list_id"]), str(m.at[i, "reginet_name"]))).fetchall()
+                m.at[i, "choices"] = " | ".join(f"SRO {o[1]}: sro_list_id {o[0]}, village_list_id {o[2]}" for o in opts)
+        m.loc[bad.index, ["sro_list_id", "sro_name", "village_list_id"]] = None
+    m.to_excel(site.glv_map, index=False)
     if len(bad):
         raise NeedsReview(f"check the TNReginet village match for {', '.join(bad.village)} in {site.glv_map.name} "
                           f"(fill sro_list_id / village_list_id, then run the GLV stage again)")
